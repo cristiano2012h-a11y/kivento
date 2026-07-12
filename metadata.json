@@ -1,0 +1,6 @@
+{
+  "name": "Kivento",
+  "description": "Kivento - O vento a favor de suas compras. Uma loja online moderna com catálogo premium de produtos, entregas rápidas na Europa e rastreamento simples para clientes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
