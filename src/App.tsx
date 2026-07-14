@@ -93,9 +93,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans animate-fade-in" id="app-root-container">
-      {/* Upper ambient background gradients */}
-      <div className="absolute top-0 left-0 right-0 h-96 bg-gradient-to-b from-blue-50/60 to-slate-50/0 pointer-events-none" id="ambient-glow" />
+    <div className="min-h-screen bg-white text-slate-900 font-sans animate-fade-in" id="app-root-container">
+      {/* Upper ambient background gradients - Zara/Apple crisp clean style */}
+      <div className="absolute top-0 left-0 right-0 h-96 bg-gradient-to-b from-slate-50 to-white pointer-events-none" id="ambient-glow" />
 
       {/* Main Container Wrapper */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-8 relative z-10" id="main-wrapper">
@@ -108,8 +108,8 @@ export default function App() {
               <span className="text-[10px] bg-red-100 text-red-700 font-extrabold px-2.5 py-0.5 rounded-full shadow-xs">
                 Loja Oficial 🇵🇹
               </span>
-              <span className="text-[10px] bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-full border border-amber-200">
-                Sem Intermediários 📦
+              <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-full border border-indigo-200">
+                Administração Exclusiva 👤
               </span>
             </div>
           </div>
@@ -133,8 +133,8 @@ export default function App() {
             onClick={() => setActiveTab('shop')}
             className={`px-5 py-3 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
               activeTab === 'shop'
-                ? 'border-red-600 text-red-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-200'
+                ? 'border-slate-950 text-slate-950 font-black'
+                : 'border-transparent text-slate-500 hover:text-slate-850 hover:border-slate-250'
             }`}
           >
             <ShoppingBag className="w-4 h-4" />
@@ -146,8 +146,8 @@ export default function App() {
             onClick={() => setActiveTab('tracking')}
             className={`px-5 py-3 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
               activeTab === 'tracking'
-                ? 'border-red-600 text-red-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-200'
+                ? 'border-slate-950 text-slate-950 font-black'
+                : 'border-transparent text-slate-500 hover:text-slate-850 hover:border-slate-250'
             }`}
           >
             <Navigation className="w-4 h-4" />
@@ -183,6 +183,7 @@ export default function App() {
               removeFromCart={removeFromCart}
               updateCartQuantity={updateCartQuantity}
               onCheckout={handleCheckoutInitiate}
+              refreshTrigger={refreshTrigger}
             />
           )}
 

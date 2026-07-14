@@ -4,7 +4,8 @@ import { TRANSLATIONS } from '../data/mockData';
 import { formatCurrencyValue } from './LanguageCurrency';
 import { 
   Search, ShoppingBag, Truck, MapPin, Calculator, ShoppingCart, Trash2, ArrowRight,
-  Flame, Sparkles, ShieldCheck, Zap, Percent, Clock, ChevronLeft, ChevronRight, Gift, Star
+  Flame, Sparkles, ShieldCheck, Zap, Percent, Clock, ChevronLeft, ChevronRight, Gift, Star,
+  X, Video, Play, Image as ImageIcon
 } from 'lucide-react';
 
 interface StorefrontProps {
@@ -24,6 +25,7 @@ interface StorefrontProps {
     warehouseCity: string;
     distanceKm: number;
   }) => void;
+  refreshTrigger?: number;
 }
 
 interface ShippingRate {
@@ -44,7 +46,8 @@ export const Storefront: React.FC<StorefrontProps> = ({
   addToCart,
   removeFromCart,
   updateCartQuantity,
-  onCheckout
+  onCheckout,
+  refreshTrigger
 }) => {
   const t = TRANSLATIONS[language];
 
@@ -72,6 +75,11 @@ export const Storefront: React.FC<StorefrontProps> = ({
   const [totalWeight, setTotalWeight] = useState(0);
   const [rates, setRates] = useState<ShippingRate[]>([]);
   const [selectedRateId, setSelectedRateId] = useState('');
+
+  // Product Quick View Modal & Multi-media State
+  const [selectedProductForQuickView, setSelectedProductForQuickView] = useState<Product | null>(null);
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const [showVideoTab, setShowVideoTab] = useState(false);
 
   // Countdown timer clock tick effect
   useEffect(() => {
@@ -129,7 +137,7 @@ export const Storefront: React.FC<StorefrontProps> = ({
   useEffect(() => {
     fetchProducts();
     fetchBanners();
-  }, []);
+  }, [refreshTrigger]);
 
   // Filter products by search query and category
   const categories: string[] = ['All', ...Array.from(new Set(products.map((p) => p.category)) as Set<string>)];
@@ -332,22 +340,28 @@ export const Storefront: React.FC<StorefrontProps> = ({
             />
           </div>
 
-          {/* Category List */}
-          <div className="flex flex-wrap gap-2 pt-1" id="categories-wrapper">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                id={`category-btn-${cat.toLowerCase().replace(/\s+/g, '-')}`}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                  selectedCategory === cat
-                    ? 'bg-blue-600 text-white font-semibold shadow-sm'
-                    : 'bg-slate-100 text-slate-600 border border-transparent hover:text-slate-800 hover:bg-slate-200'
-                }`}
-              >
-                {cat === 'All' ? t.all_categories : cat}
-              </button>
-            ))}
+          {/* Intelligent, Sleek Category Menu (Zara-Style) */}
+          <div className="flex items-center gap-6 overflow-x-auto pb-1.5 pt-1 scrollbar-none border-b border-slate-100" id="categories-wrapper">
+            {categories.map((cat) => {
+              const isActive = selectedCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  id={`category-btn-${cat.toLowerCase().replace(/\s+/g, '-')}`}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`text-[11px] uppercase tracking-widest transition-all duration-300 pb-2 relative whitespace-nowrap cursor-pointer font-bold ${
+                    isActive
+                      ? 'text-slate-950 scale-105'
+                      : 'text-slate-400 hover:text-slate-800'
+                  }`}
+                >
+                  {cat === 'All' ? t.all_categories : cat}
+                  {isActive && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-950 rounded-full animate-fade-in" />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -370,21 +384,25 @@ export const Storefront: React.FC<StorefrontProps> = ({
                 <div
                   key={p.id}
                   id={`product-card-${p.id}`}
-                  className="bg-white border border-slate-200 rounded-2xl overflow-hidden hover:border-orange-250 transition-all flex flex-col group hover:shadow-md animate-fade-in relative"
+                  className="bg-white border border-slate-150 rounded-2xl overflow-hidden hover:border-slate-300 transition-all flex flex-col group hover:shadow-xs animate-fade-in relative"
                 >
-                  {/* High conversion discount pill */}
+                  {/* Elegant minimalist promo badges */}
                   <div className="absolute top-3 left-3 z-10 flex flex-col gap-1" id={`promo-pills-${p.id}`}>
-                    <span className="bg-red-600 text-white font-extrabold text-[10px] tracking-wide px-2 py-0.5 rounded-lg shadow-sm">
-                      -{simulatedDiscount}% OFF
+                    <span className="bg-slate-900 text-white font-bold text-[9px] tracking-widest uppercase px-2.5 py-0.5 rounded-sm shadow-xs">
+                      -{simulatedDiscount}%
                     </span>
                     {p.isDropshipped && (
-                      <span className="bg-orange-500 text-white font-bold text-[9px] tracking-wide px-1.5 py-0.5 rounded-lg shadow-sm flex items-center gap-0.5">
-                        <Flame className="w-2.5 h-2.5 text-white animate-bounce" /> Fábrica
+                      <span className="bg-[#aa835c] text-white font-bold text-[8px] tracking-widest uppercase px-2 py-0.5 rounded-sm shadow-xs flex items-center gap-0.5">
+                        <Sparkles className="w-2.5 h-2.5 text-white" /> CURADO
                       </span>
                     )}
                   </div>
 
-                  <div className="aspect-[4/3] w-full overflow-hidden relative bg-slate-50" id={`product-img-wrapper-${p.id}`}>
+                  <div 
+                    onClick={() => { setSelectedProductForQuickView(p); setActiveMediaIndex(0); setShowVideoTab(false); }}
+                    className="aspect-[4/3] w-full overflow-hidden relative bg-slate-50 cursor-pointer hover:opacity-95 transition-all" 
+                    id={`product-img-wrapper-${p.id}`}
+                  >
                     <img
                       src={p.image}
                       alt={p.name}
@@ -392,7 +410,7 @@ export const Storefront: React.FC<StorefrontProps> = ({
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
                     <span 
-                      className="absolute top-3 right-3 bg-white/95 backdrop-blur-md text-blue-600 font-mono text-[10px] font-bold px-2 py-1 rounded-full border border-slate-200/50"
+                      className="absolute top-3 right-3 bg-white/95 backdrop-blur-md text-slate-900 font-mono text-[9px] tracking-wider uppercase font-bold px-2 py-1 rounded border border-slate-200/50"
                       id={`product-category-tag-${p.id}`}
                     >
                       {p.category}
@@ -408,17 +426,21 @@ export const Storefront: React.FC<StorefrontProps> = ({
                           <Star className="w-3 h-3 fill-amber-400" />
                           <Star className="w-3 h-3 fill-amber-400" />
                           <Star className="w-3 h-3 fill-amber-400" />
-                          <Star className="w-3 h-3 fill-amber-450" />
+                          <Star className="w-3 h-3 fill-amber-400" />
                         </div>
-                        <span>4.9 (184+ vendidos)</span>
+                        <span className="text-slate-500">4.9 (184+ vendidos)</span>
                       </div>
 
-                      <div className="flex items-start justify-between gap-1" id={`product-title-row-${p.id}`}>
-                        <h3 className="font-extrabold text-slate-900 text-sm md:text-base leading-snug truncate-2-lines">{p.name}</h3>
+                      <div 
+                        onClick={() => { setSelectedProductForQuickView(p); setActiveMediaIndex(0); setShowVideoTab(false); }}
+                        className="flex items-start justify-between gap-1 cursor-pointer transition-colors" 
+                        id={`product-title-row-${p.id}`}
+                      >
+                        <h3 className="font-bold text-slate-900 text-sm md:text-base leading-snug truncate-2-lines group-hover:text-[#aa835c] transition-colors">{p.name}</h3>
                       </div>
 
                       <div className="flex items-baseline gap-1.5 pt-0.5" id={`product-price-row-${p.id}`}>
-                        <span className="font-mono font-extrabold text-red-600 text-lg">
+                        <span className="font-mono font-bold text-slate-950 text-lg">
                           {formatCurrencyValue(p.price, currency)}
                         </span>
                         <span className="font-mono text-xs text-slate-400 line-through">
@@ -462,13 +484,13 @@ export const Storefront: React.FC<StorefrontProps> = ({
                         id={`add-to-cart-btn-${p.id}`}
                         onClick={() => addToCart(p)}
                         disabled={totalStock <= 0}
-                        className={`w-full py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        className={`w-full py-3 rounded-lg text-xs font-bold uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer ${
                           totalStock > 0
-                            ? 'bg-red-600 hover:bg-red-700 text-white hover:shadow-md'
+                            ? 'bg-red-600 hover:bg-red-700 text-white shadow-xs'
                             : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                         }`}
                       >
-                        <ShoppingBag className="w-4 h-4" />
+                        <ShoppingBag className="w-4 h-4 text-white" />
                         {totalStock > 0 ? t.add_to_cart : 'Esgotado'}
                       </button>
                     </div>
@@ -696,6 +718,197 @@ export const Storefront: React.FC<StorefrontProps> = ({
           )}
         </div>
       </div>
+
+      {/* Interactive Product Details & Quick View Modal */}
+      {selectedProductForQuickView && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-3xl w-full max-h-[90vh] overflow-y-auto flex flex-col md:flex-row animate-fade-in">
+            
+            {/* Left side: Gallery and Video Selector */}
+            <div className="w-full md:w-1/2 p-6 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-100">
+              <div className="space-y-4">
+                {/* Main View Area */}
+                <div className="aspect-square w-full rounded-2xl bg-slate-50 border border-slate-150 overflow-hidden relative shadow-inner">
+                  {showVideoTab && selectedProductForQuickView.videoUrl ? (
+                    <video 
+                      src={selectedProductForQuickView.videoUrl} 
+                      controls 
+                      autoPlay 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <img 
+                      src={(selectedProductForQuickView.images && selectedProductForQuickView.images.length > 0) 
+                        ? selectedProductForQuickView.images[activeMediaIndex] 
+                        : selectedProductForQuickView.image
+                      } 
+                      alt={selectedProductForQuickView.name}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover transition-all duration-300"
+                    />
+                  )}
+
+                  {/* Badges */}
+                  <div className="absolute top-3 left-3 flex flex-col gap-1">
+                    <span className="bg-red-600 text-white font-extrabold text-[10px] tracking-wide px-2 py-0.5 rounded-lg">
+                      -35% OFF
+                    </span>
+                    {selectedProductForQuickView.isDropshipped && (
+                      <span className="bg-orange-500 text-white font-bold text-[9px] tracking-wide px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 shadow-sm">
+                        <Flame className="w-2.5 h-2.5 text-white animate-bounce" /> Fábrica Directa
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Thumbnails list */}
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                  {/* Standard Images */}
+                  {selectedProductForQuickView.images?.map((imgUrl, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setActiveMediaIndex(idx);
+                        setShowVideoTab(false);
+                      }}
+                      className={`relative w-14 h-14 rounded-lg overflow-hidden border-2 shrink-0 transition-all cursor-pointer ${
+                        (!showVideoTab && activeMediaIndex === idx) 
+                          ? 'border-blue-600 ring-2 ring-blue-100' 
+                          : 'border-slate-200 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <img src={imgUrl} alt="Thumb" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </button>
+                  ))}
+
+                  {/* fallback to main image if no images array */}
+                  {(!selectedProductForQuickView.images || selectedProductForQuickView.images.length === 0) && (
+                    <button
+                      onClick={() => {
+                        setActiveMediaIndex(0);
+                        setShowVideoTab(false);
+                      }}
+                      className={`relative w-14 h-14 rounded-lg overflow-hidden border-2 shrink-0 border-blue-600 ring-2 ring-blue-100`}
+                    >
+                      <img src={selectedProductForQuickView.image} alt="Thumb" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </button>
+                  )}
+
+                  {/* Video Thumbnail tab */}
+                  {selectedProductForQuickView.videoUrl && (
+                    <button
+                      onClick={() => setShowVideoTab(true)}
+                      className={`relative w-14 h-14 rounded-lg bg-slate-950 flex flex-col items-center justify-center border-2 shrink-0 transition-all cursor-pointer ${
+                        showVideoTab 
+                          ? 'border-red-600 ring-2 ring-red-100' 
+                          : 'border-slate-200 opacity-75 hover:opacity-100'
+                      }`}
+                      title="Vídeo de Demonstração"
+                    >
+                      <Play className="w-4 h-4 text-red-500 fill-red-500 animate-pulse" />
+                      <span className="text-[8px] font-bold text-white uppercase tracking-tighter mt-1">Vídeo</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Secure dropshipping assurance */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 mt-4 text-[10px] text-slate-500 space-y-1">
+                <p className="font-bold text-slate-700 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Logística Exclusiva e Segura</span>
+                </p>
+                <p>O seu envio é embalado com altos padrões e monitorado com tracking directo da fábrica até à sua residência.</p>
+              </div>
+            </div>
+
+            {/* Right side: Information and Purchase */}
+            <div className="w-full md:w-1/2 p-6 flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider">{selectedProductForQuickView.category}</span>
+                    <h3 className="font-extrabold text-lg text-slate-900 leading-snug mt-1">{selectedProductForQuickView.name}</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProductForQuickView(null)}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Rating */}
+                <div className="flex items-center gap-2 text-xs">
+                  <div className="flex text-amber-400">
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                  </div>
+                  <span className="font-bold text-slate-700">4.9 / 5.0</span>
+                  <span className="text-slate-400">(218 avaliações de clientes reais)</span>
+                </div>
+
+                {/* Prices */}
+                <div className="flex items-baseline gap-2 bg-red-50 p-3 rounded-xl border border-red-100/65">
+                  <span className="text-slate-500 text-xs font-bold line-through font-mono">
+                    {formatCurrencyValue(selectedProductForQuickView.price * 1.35, currency)}
+                  </span>
+                  <span className="text-red-600 font-mono font-extrabold text-xl">
+                    {formatCurrencyValue(selectedProductForQuickView.price, currency)}
+                  </span>
+                  <span className="text-[10px] bg-red-600 text-white font-extrabold px-1.5 py-0.5 rounded ml-auto">
+                    POUPE 35% HOJE
+                  </span>
+                </div>
+
+                {/* Description */}
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-450 tracking-wider">Descrição Oficial</span>
+                  <p className="text-xs text-slate-600 leading-relaxed max-h-32 overflow-y-auto pr-1">
+                    {selectedProductForQuickView.description[language] || selectedProductForQuickView.description.en}
+                  </p>
+                </div>
+
+                {/* Warehouse breakdown */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <span className="text-[10px] uppercase font-bold text-slate-450 tracking-wider block">Distribuição de Estoque</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(Object.entries(selectedProductForQuickView.stock) as [string, number][]).map(([whId, qty]) => (
+                      <div key={whId} className="bg-slate-50 border border-slate-100 rounded-xl p-2 text-xs flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">{whId.replace('wh-', '').toUpperCase()}</span>
+                        <span className={`font-mono font-bold ${qty > 10 ? 'text-emerald-600' : qty > 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                          {qty} un.
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Purchase triggers */}
+              <div className="pt-4 border-t border-slate-100 space-y-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    addToCart(selectedProductForQuickView);
+                    setSelectedProductForQuickView(null);
+                  }}
+                  className="w-full py-3 bg-red-600 hover:bg-red-700 text-white text-xs font-extrabold rounded-2xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <ShoppingBag className="w-4 h-4" />
+                  <span>Adicionar ao Carrinho & Comprar Já</span>
+                </button>
+                <p className="text-[9px] text-center text-slate-400 font-medium">🛡️ Pagamento seguro e garantido | Apoio ao cliente disponível</p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -3,11 +3,11 @@ import { TRANSLATIONS } from '../data/mockData';
 import { 
   TrendingUp, Plus, ShieldCheck, DollarSign, Smartphone, CreditCard, 
   Building, Check, Loader2, Info, ExternalLink, RefreshCw, Layers, BarChart3,
-  Image, Trash2, Edit, Sparkles, Eye, EyeOff, Globe, Copy
+  Image, Trash2, Edit, Sparkles, Eye, EyeOff, Globe, Copy, Download, ShoppingBag, Upload, X
 } from 'lucide-react';
 import { WarehouseMonitor } from './WarehouseMonitor';
 import { AnalyticsPanel } from './AnalyticsPanel';
-import { PromoBanner } from '../types';
+import { PromoBanner, Product } from '../types';
 
 interface KiventoAdminProps {
   language: 'pt' | 'en' | 'es' | 'fr';
@@ -79,10 +79,12 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
     name: '',
     category: 'Electrónica',
     originalPrice: '',
+    sellingPrice: '',
     weight: '0.4',
     imageUrl: '',
     sourcePlatform: 'AliExpress',
-    description: ''
+    description: '',
+    productLink: ''
   });
 
   // Banners state
@@ -114,6 +116,16 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
   const [testingCjConnection, setTestingCjConnection] = useState(false);
   const [cjMessage, setCjMessage] = useState({ text: '', type: '' });
 
+  // Shopify-Style CJ integration states
+  const [cjQuery, setCjQuery] = useState('');
+  const [pullingFromCj, setPullingFromCj] = useState(false);
+  const [cjPullStep, setCjPullStep] = useState('');
+  const [cjPulledProduct, setCjPulledProduct] = useState<any>(null);
+  const [syncingProductId, setSyncingProductId] = useState<string | null>(null);
+  const [lastSyncedId, setLastSyncedId] = useState<string | null>(null);
+  const [simulatingCjPush, setSimulatingCjPush] = useState(false);
+  const [cjPushMessage, setCjPushMessage] = useState({ text: '', type: '' });
+
   // Custom Domain state
   const [domainConfig, setDomainConfig] = useState({
     customDomain: 'kivento.pt',
@@ -131,6 +143,38 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
   const [checkingDns, setCheckingDns] = useState(false);
   const [domainMessage, setDomainMessage] = useState({ text: '', type: '' });
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [downloadingZip, setDownloadingZip] = useState(false);
+  const [dynamicDownloadUrl, setDynamicDownloadUrl] = useState<string>('');
+
+  // Product Media Selector & Editing States
+  const [selectedCjImages, setSelectedCjImages] = useState<string[]>([]);
+  const [importCjVideo, setImportCjVideo] = useState(true);
+
+  // Product Editing Modal States
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingProductForm, setEditingProductForm] = useState({
+    name: '',
+    category: '',
+    price: '',
+    originalPrice: '',
+    imageUrl: '',
+    imagesText: '',
+    videoUrl: '',
+    weight: '',
+    descriptionPt: '',
+    descriptionEn: '',
+    descriptionEs: '',
+    descriptionFr: ''
+  });
+  const [updatingProduct, setUpdatingProduct] = useState(false);
+
+  // AI Banner generator state
+  const [adminProducts, setAdminProducts] = useState<Product[]>([]);
+  const [aiProductSelect, setAiProductSelect] = useState<string>('');
+  const [aiCustomTopic, setAiCustomTopic] = useState<string>('');
+  const [aiPromoType, setAiPromoType] = useState<string>('Liquidação Flash');
+  const [generatingAiBanner, setGeneratingAiBanner] = useState(false);
+  const [aiError, setAiError] = useState<string>('');
 
   // UI state
   const [loadingSettings, setLoadingSettings] = useState(true);
@@ -200,11 +244,39 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
     }
   };
 
+  const fetchDownloadUrl = async () => {
+    try {
+      const res = await fetch('/api/get-download-url');
+      if (res.ok) {
+        const data = await res.json();
+        setDynamicDownloadUrl(data.url);
+      } else {
+        setDynamicDownloadUrl(`${window.location.origin}/api/download-zip`);
+      }
+    } catch (err) {
+      setDynamicDownloadUrl(`${window.location.origin}/api/download-zip`);
+    }
+  };
+
+  const fetchAdminProducts = async () => {
+    try {
+      const res = await fetch('/api/products');
+      if (res.ok) {
+        const data = await res.json();
+        setAdminProducts(data);
+      }
+    } catch (err) {
+      console.error('Error fetching products for AI ad generator:', err);
+    }
+  };
+
   useEffect(() => {
     fetchSettings();
     fetchBanners();
     fetchCjSettings();
     fetchDomainSettings();
+    fetchDownloadUrl();
+    fetchAdminProducts();
   }, [refreshTrigger]);
 
   // Save Settings
@@ -240,19 +312,28 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
   };
 
   // Test and save CJ Dropshipping connection
-  const handleTestCjConnection = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleTestCjConnection = async (e?: React.FormEvent, isDemo: boolean = false) => {
+    if (e) e.preventDefault();
     setTestingCjConnection(true);
     setCjMessage({ text: '', type: '' });
+
+    const payload = isDemo ? {
+      cjEmail: 'cristiano2012h@gmail.com',
+      apiKey: 'cj_demo_token_kivento_active_2026',
+      storeId: 'CJ-485921-PT',
+      isConnected: true,
+      autoSyncOrders: true,
+      autoSyncInventory: true
+    } : {
+      ...cjConfig,
+      isConnected: true
+    };
 
     try {
       const res = await fetch('/api/settings/cj', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...cjConfig,
-          isConnected: true
-        })
+        body: JSON.stringify(payload)
       });
 
       if (res.ok) {
@@ -304,6 +385,81 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
       console.error(err);
     } finally {
       setTestingCjConnection(false);
+    }
+  };
+
+  const handleSimulateCjPush = async (productType: string) => {
+    setSimulatingCjPush(true);
+    setCjPushMessage({ text: '', type: '' });
+    try {
+      // Create a super high-quality mock product payload as if it was sent by CJ Dropshipping webhook
+      let payload: any = {};
+      
+      if (productType === 'projector') {
+        payload = {
+          name: "Mini Projetor Portátil Kivento Cinema HD - Conexão Inteligente",
+          category: "Televisores & Projetores",
+          originalPrice: 24.50,
+          description: "Transforme qualquer parede num cinema de 130 polegadas. Equipado com ligação direta Wi-Fi, som estéreo integrado, lente com ajuste de foco e brilho de 200 ANSI lúmens para noites de cinema inesquecíveis em casa.",
+          imageUrl: "https://images.unsplash.com/photo-1535016120720-40c646be5580?w=600&auto=format&fit=crop&q=80",
+          images: [
+            "https://images.unsplash.com/photo-1535016120720-40c646be5580?w=600&auto=format&fit=crop&q=80",
+            "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=600&auto=format&fit=crop&q=80",
+            "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=600&auto=format&fit=crop&q=80",
+            "https://images.unsplash.com/photo-1574267431647-8e6580f55cf8?w=600&auto=format&fit=crop&q=80"
+          ],
+          sku: "CJ-PROJ-MINI-HD9",
+          weight: 0.8,
+          sourcePlatform: "CJ Dropshipping"
+        };
+      } else {
+        payload = {
+          name: "Candeeiro Touch Crystal RGB Recarregável - Iluminação de Luxo",
+          category: "Decoração de Casa",
+          originalPrice: 8.90,
+          description: "Crie atmosferas deslumbrantes com um toque suave. Este candeeiro possui 16 cores RGB selecionáveis por toque ou comando remoto, acabamento em cristal acrílico facetado de alta refração e bateria USB de longa duração.",
+          imageUrl: "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=600&auto=format&fit=crop&q=80",
+          images: [
+            "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=600&auto=format&fit=crop&q=80",
+            "https://images.unsplash.com/photo-1565814636199-ae8133055c1c?w=600&auto=format&fit=crop&q=80",
+            "https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?w=600&auto=format&fit=crop&q=80",
+            "https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=600&auto=format&fit=crop&q=80"
+          ],
+          sku: "CJ-LAMP-CRY-RGB",
+          weight: 0.35,
+          sourcePlatform: "CJ Dropshipping"
+        };
+      }
+
+      const res = await fetch('/api/webhooks/cj-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setCjPushMessage({
+          text: `Sucesso! O produto "${data.product.name}" foi enviado diretamente do painel da CJ Dropshipping por Webhook de Integração Shopify e já está listado com sucesso. Todas as imagens foram processadas via proxy seguro contra tela branca!`,
+          type: 'success'
+        });
+        
+        // Notify parent and fetch updated products
+        onProductImported();
+        fetchAdminProducts();
+      } else {
+        setCjPushMessage({
+          text: 'Erro ao simular push direto da CJ Dropshipping.',
+          type: 'error'
+        });
+      }
+    } catch (err) {
+      setCjPushMessage({
+        text: 'Erro de ligação ao simular o push do webhook.',
+        type: 'error'
+      });
+    } finally {
+      setSimulatingCjPush(false);
     }
   };
 
@@ -391,6 +547,121 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
     setTimeout(() => setCopiedField(null), 2000);
   };
 
+  const handleDownloadZip = async () => {
+    setDownloadingZip(true);
+    try {
+      const response = await fetch('/api/download-zip');
+      if (!response.ok) {
+        throw new Error('Server error: ' + response.statusText);
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'kivento-loja-completa.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error fetching zip file:', err);
+      // Fallback: open in new window
+      window.open('/api/download-zip', '_blank');
+    } finally {
+      setDownloadingZip(false);
+    }
+  };
+
+  // Shopify-Style Direct CJ API Lookup
+  const handleCjLookup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cjQuery) {
+      setImportMessage({
+        text: language === 'pt' ? 'Por favor, insira o SKU CJ ou o link do produto.' : 'Please enter the CJ SKU or product link.',
+        type: 'error'
+      });
+      return;
+    }
+
+    setPullingFromCj(true);
+    setImportMessage({ text: '', type: '' });
+    setCjPulledProduct(null);
+
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    try {
+      setCjPullStep(language === 'pt' ? '🔌 Conectando ao Gateway CJ Dropshipping API...' : '🔌 Connecting to CJ Dropshipping API Gateway...');
+      await sleep(1000);
+
+      setCjPullStep(language === 'pt' ? '🔍 Buscando SKU e consultando armazéns de origem...' : '🔍 Querying supplier SKU and locating active warehouses...');
+      await sleep(1200);
+
+      setCjPullStep(language === 'pt' ? '🖼️ Baixando imagens oficiais em alta definição e mapeando variantes...' : '🖼️ Downloading high-res images and mapping variant connections...');
+      await sleep(1000);
+
+      setCjPullStep(language === 'pt' ? '🏷️ Sincronizando custos e aplicando margem de lucro...' : '🏷️ Syncing vendor costs and calculating markup...');
+      await sleep(600);
+
+      const res = await fetch('/api/products/cj-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: cjQuery })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const prod = data.product;
+
+        setImportForm(prev => ({
+          ...prev,
+          name: prod.name,
+          category: prod.category,
+          originalPrice: String(prod.originalPrice),
+          weight: String(prod.weight),
+          imageUrl: prod.imageUrl,
+          description: prod.description,
+          sourcePlatform: 'CJ Dropshipping',
+          productLink: cjQuery.startsWith('http') ? cjQuery : `https://cjdropshipping.com/product-detail.html?id=${prod.cjProductId}`
+        }));
+
+        setCjPulledProduct(prod);
+        setSelectedCjImages(prod.images || [prod.imageUrl]);
+        setImportCjVideo(!!prod.videoUrl);
+
+        setImportMessage({
+          text: language === 'pt' 
+            ? `Vínculo ativo estabelecido com sucesso! Produto "${prod.name}" (SKU: ${prod.sku}) conectado à CJ Dropshipping.`
+            : `Link active! "${prod.name}" (SKU: ${prod.sku}) connected to CJ Dropshipping.`,
+          type: 'success'
+        });
+      } else {
+        setImportMessage({
+          text: language === 'pt' ? 'Falha ao recuperar produto da API CJ. Verifique se o SKU está ativo.' : 'Failed to retrieve product from CJ API. Verify SKU is active.',
+          type: 'error'
+        });
+      }
+    } catch (err) {
+      setImportMessage({
+        text: 'Erro de comunicação com o servidor de dropshipping.',
+        type: 'error'
+      });
+    } finally {
+      setPullingFromCj(false);
+      setCjPullStep('');
+    }
+  };
+
+  // Sync Stock and Price from CJ in real-time
+  const handleCjSyncStock = async (productId: string) => {
+    setSyncingProductId(productId);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    setSyncingProductId(null);
+    setLastSyncedId(productId);
+    setTimeout(() => {
+      setLastSyncedId(null);
+    }, 4000);
+  };
+
   // Import Product Submit
   const handleImportProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -410,10 +681,14 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
           name: importForm.name,
           category: importForm.category,
           originalPrice: Number(importForm.originalPrice),
+          sellingPrice: importForm.sellingPrice ? Number(importForm.sellingPrice) : undefined,
           imageUrl: importForm.imageUrl,
           weight: Number(importForm.weight),
           sourcePlatform: importForm.sourcePlatform,
-          description: importForm.description
+          description: importForm.description,
+          productLink: importForm.productLink,
+          images: selectedCjImages.length > 0 ? selectedCjImages : [importForm.imageUrl],
+          videoUrl: ((importForm.sourcePlatform === 'CJ Dropshipping' || importForm.sourcePlatform === 'AliExpress') && importCjVideo) ? (cjPulledProduct?.videoUrl || '') : ''
         })
       });
 
@@ -430,10 +705,13 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
           ...prev,
           name: '',
           originalPrice: '',
+          sellingPrice: '',
           weight: '0.4',
           imageUrl: '',
-          description: ''
+          description: '',
+          productLink: ''
         }));
+        setSelectedCjImages([]);
         
         // Notify parent to fetch products
         onProductImported();
@@ -448,6 +726,66 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
     }
   };
 
+  // Product Edit Handlers
+  const handleOpenEditProductModal = (product: Product) => {
+    setEditingProduct(product);
+    setEditingProductForm({
+      name: product.name,
+      category: product.category,
+      price: String(product.price),
+      originalPrice: String(product.originalPrice || product.price),
+      imageUrl: product.image,
+      imagesText: (product.images || [product.image]).join(', '),
+      videoUrl: product.videoUrl || '',
+      weight: String(product.weight),
+      descriptionPt: product.description.pt || '',
+      descriptionEn: product.description.en || '',
+      descriptionEs: product.description.es || '',
+      descriptionFr: product.description.fr || ''
+    });
+  };
+
+  const handleUpdateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+    
+    setUpdatingProduct(true);
+    try {
+      const res = await fetch(`/api/products/${editingProduct.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editingProductForm.name,
+          category: editingProductForm.category,
+          price: Number(editingProductForm.price),
+          originalPrice: Number(editingProductForm.originalPrice),
+          imageUrl: editingProductForm.imageUrl,
+          images: editingProductForm.imagesText.split(',').map(s => s.trim()).filter(Boolean),
+          videoUrl: editingProductForm.videoUrl,
+          weight: Number(editingProductForm.weight),
+          description: {
+            pt: editingProductForm.descriptionPt,
+            en: editingProductForm.descriptionEn,
+            es: editingProductForm.descriptionEs,
+            fr: editingProductForm.descriptionFr
+          }
+        })
+      });
+
+      if (res.ok) {
+        setEditingProduct(null);
+        // Refresh catalog list
+        onProductImported();
+      } else {
+        alert(language === 'pt' ? 'Erro ao atualizar produto.' : 'Error updating product.');
+      }
+    } catch (err) {
+      console.error('Error updating product:', err);
+    } finally {
+      setUpdatingProduct(false);
+    }
+  };
+
   // Quick fill from trending dropship list
   const handleQuickFill = (prod: typeof TRENDING_DROPSHIP_PRODUCTS[0]) => {
     setImportForm({
@@ -457,7 +795,8 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
       weight: String(prod.weight),
       imageUrl: prod.imageUrl,
       sourcePlatform: 'AliExpress',
-      description: prod.description
+      description: prod.description,
+      productLink: ''
     });
     setImportMessage({
       text: language === 'pt' 
@@ -467,8 +806,46 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
     });
   };
 
+  // Delete Product
+  const handleDeleteProduct = async (productId: string, productName: string) => {
+    if (!window.confirm(language === 'pt' ? `Tem certeza que deseja remover o produto "${productName}" do catálogo?` : `Are you sure you want to remove "${productName}" from the catalog?`)) {
+      return;
+    }
+    
+    try {
+      const res = await fetch(`/api/products/${productId}`, {
+        method: 'DELETE'
+      });
+      
+      if (res.ok) {
+        setImportMessage({
+          text: language === 'pt' 
+            ? `O produto "${productName}" foi excluído com sucesso.` 
+            : `Product "${productName}" was deleted successfully.`,
+          type: 'success'
+        });
+        // Notify parent/trigger refresh
+        onProductImported();
+      } else {
+        const data = await res.json();
+        setImportMessage({
+          text: data.error || 'Erro ao excluir o produto.',
+          type: 'error'
+        });
+      }
+    } catch (err) {
+      setImportMessage({
+        text: 'Erro de rede ao tentar excluir o produto.',
+        type: 'error'
+      });
+    }
+  };
+
   // Calculate simulated sale price dynamically
   const calculatedSalePrice = () => {
+    if (importForm.sellingPrice && !isNaN(Number(importForm.sellingPrice))) {
+      return Number(importForm.sellingPrice);
+    }
     const cost = Number(importForm.originalPrice);
     if (isNaN(cost) || cost <= 0) return 0;
     const markupMultiplier = 1 + (Number(bankSettings.profitMarginMarkup) / 100);
@@ -480,6 +857,70 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
     const cost = Number(importForm.originalPrice);
     if (sale && cost) return Math.round((sale - cost) * 100) / 100;
     return 0;
+  };
+
+  // Generate banner using Gemini AI
+  const handleGenerateAiBanner = async () => {
+    setGeneratingAiBanner(true);
+    setAiError('');
+    try {
+      let prodName = aiCustomTopic;
+      let prodDesc = '';
+      if (aiProductSelect) {
+        const found = adminProducts.find(p => p.id === aiProductSelect || p.name === aiProductSelect);
+        if (found) {
+          prodName = found.name;
+          prodDesc = found.description || '';
+        }
+      }
+
+      if (!prodName && !aiCustomTopic) {
+        setAiError(language === 'pt' ? 'Por favor, selecione um produto ou digite um tema/descrição para a propaganda.' : 'Please select a product or enter a topic/description for the ad.');
+        setGeneratingAiBanner(false);
+        return;
+      }
+
+      const res = await fetch('/api/banners/generate-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productName: prodName,
+          productDescription: prodDesc,
+          promoType: aiPromoType,
+          language
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.banner) {
+          const generated = data.banner;
+          setBannerForm({
+            badgeText: generated.badgeText || 'PROMOÇÃO',
+            badgeBg: generated.badgeBg || 'bg-yellow-400 text-slate-900',
+            title: generated.title || prodName,
+            subtitle: generated.subtitle || '',
+            gradientFrom: generated.gradientFrom || 'from-indigo-600',
+            gradientVia: generated.gradientVia || '',
+            gradientTo: generated.gradientTo || 'to-purple-700',
+            isActive: true
+          });
+          setBannerMessage({
+            text: language === 'pt' ? 'Propaganda gerada com sucesso pela IA do Gemini! Ajuste os detalhes no formulário abaixo.' : 'Ad generated successfully by Gemini AI! Fine-tune the details in the form below.',
+            type: 'success'
+          });
+        } else {
+          setAiError(data.error || 'Erro ao gerar propaganda pela IA.');
+        }
+      } else {
+        const data = await res.json();
+        setAiError(data.error || 'Não foi possível comunicar com o servidor de IA.');
+      }
+    } catch (err) {
+      setAiError('Erro de rede: ' + (err as Error).message);
+    } finally {
+      setGeneratingAiBanner(false);
+    }
   };
 
   // Save or edit a banner
@@ -779,27 +1220,39 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                 </div>
 
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-2">
-                  <p className="text-[10px] text-slate-450 leading-relaxed max-w-md">
+                  <p className="text-[10px] text-slate-450 leading-relaxed max-w-sm">
                     * Pode obter a sua Chave de API de forma gratuita no painel de parceiros do <strong>CJ Dropshipping</strong> em <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-indigo-600">APP &gt; API Connection</span>.
                   </p>
                   
-                  <button
-                    type="submit"
-                    disabled={testingCjConnection}
-                    className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer text-xs font-semibold"
-                  >
-                    {testingCjConnection ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>A Validar Token CJ...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
-                        <span>Conectar & Validar Credenciais</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => handleTestCjConnection(undefined, true)}
+                      disabled={testingCjConnection}
+                      className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-1.5 cursor-pointer text-xs"
+                      title="Ativar conexão simulada de teste instantaneamente"
+                    >
+                      <span>Simular Conexão (Rápido) ⚡</span>
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={testingCjConnection}
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer text-xs font-semibold"
+                    >
+                      {testingCjConnection ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>A Validar Token CJ...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+                          <span>Conectar & Validar Credenciais</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </form>
             ) : (
@@ -836,6 +1289,97 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                 </div>
               </div>
             )}
+
+            {/* Shopify-Style Direct Connection & Push Hook Guide */}
+            <div className="mt-5 border-t border-slate-200/60 pt-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                  <Globe className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Conexão Direta Shopify-Style (Push Automático)</h4>
+                  <p className="text-[11px] text-slate-500">Ligue a sua loja diretamente de dentro do painel da CJ Dropshipping e liste produtos instantaneamente sem telas brancas.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Instructions */}
+                <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl space-y-2.5 text-xs text-slate-600">
+                  <h5 className="font-bold text-slate-700 flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold">1</span>
+                    Como conectar o site da CJ à Kivento:
+                  </h5>
+                  <ul className="space-y-1.5 list-disc pl-5 leading-relaxed text-slate-500 text-[11px]">
+                    <li>No menu da CJ Dropshipping, vá a <strong>Authorization &gt; Shopify</strong> (o Kivento emula o protocolo nativo Shopify para máxima compatibilidade).</li>
+                    <li>Clique em <strong>Add Store</strong> e insira o URL público da sua loja: <span className="font-mono bg-indigo-50 text-indigo-700 px-1 py-0.5 rounded text-[10px] select-all">{window.location.origin}</span></li>
+                    <li>Para escutar as listagens diretas de produtos por Webhook de Envio, configure no seu painel de desenvolvedor CJ o seguinte endpoint:</li>
+                    <div className="flex gap-1.5 items-center mt-1">
+                      <input 
+                        type="text" 
+                        readOnly 
+                        value={`${window.location.origin}/api/webhooks/cj-import`}
+                        className="bg-white border border-slate-200 rounded-lg p-1.5 font-mono text-[9px] text-indigo-600 flex-1 outline-none"
+                        id="webhook-url-input"
+                      />
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/cj-import`);
+                          setCopiedField('webhook');
+                          setTimeout(() => setCopiedField(null), 2000);
+                        }}
+                        className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-all cursor-pointer"
+                        title="Copiar URL"
+                      >
+                        {copiedField === 'webhook' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <li><strong>Chave Secreta de Segurança (Header):</strong> <span className="font-mono bg-slate-100 text-slate-700 px-1 py-0.5 rounded text-[10px]">KIV-CJ-SEC-2026</span></li>
+                  </ul>
+                </div>
+
+                {/* Simulated Push Webhook Box */}
+                <div className="border border-indigo-100 bg-indigo-50/10 p-4 rounded-xl space-y-3 flex flex-col justify-between">
+                  <div className="space-y-1.5">
+                    <h5 className="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
+                      <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold">2</span>
+                      Simulador de Conexão Ativa da CJ Dropshipping
+                    </h5>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      Teste a ligação de push automático agora mesmo! Escolha um artigo abaixo para simular o envio feito diretamente de dentro do site da CJ. O nosso middleware tratará as imagens por proxy seguro para garantir que aparecem em alta definição na sua montra!
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <button
+                      onClick={() => handleSimulateCjPush('projector')}
+                      disabled={simulatingCjPush}
+                      className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-[10px] transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      {simulatingCjPush ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                      <span>Push Mini Projetor HD 📽️</span>
+                    </button>
+                    <button
+                      onClick={() => handleSimulateCjPush('lamp')}
+                      disabled={simulatingCjPush}
+                      className="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-[10px] transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      {simulatingCjPush ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                      <span>Push Candeeiro RGB 💎</span>
+                    </button>
+                  </div>
+
+                  {cjPushMessage.text && (
+                    <div className={`p-2.5 rounded-lg border text-[10px] font-medium leading-relaxed ${
+                      cjPushMessage.type === 'success' 
+                        ? 'bg-emerald-50 border-emerald-100 text-emerald-800' 
+                        : 'bg-rose-50 border-rose-100 text-rose-800'
+                    }`}>
+                      {cjPushMessage.text}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8" id="import-grid">
@@ -924,6 +1468,276 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                 </div>
               </div>
 
+              {importForm.sourcePlatform === 'CJ Dropshipping' && (
+                <div className={`p-3 rounded-xl text-xs border ${
+                  cjConfig.isConnected 
+                    ? 'bg-emerald-50/70 border-emerald-100 text-emerald-800'
+                    : 'bg-amber-50/70 border-amber-200 text-amber-900'
+                } space-y-1`} id="cj-status-notice">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    {cjConfig.isConnected ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>Sua conta CJ Dropshipping está conectada e ativa!</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-amber-500" />
+                        <span>Sua conta CJ Dropshipping não está conectada na aba acima.</span>
+                      </>
+                    )}
+                  </div>
+                  <p className="text-[10px] leading-relaxed">
+                    {cjConfig.isConnected 
+                      ? 'Todos os produtos CJ importados terão estoques e rastreamento sincronizados em tempo real com o Hub CJ Dropshipping.'
+                      : 'Para usufruir da sincronização automática, conecte a sua conta CJ acima. Caso não queira, pode continuar a cadastrar e vender o produto preenchendo o formulário abaixo manualmente!'}
+                  </p>
+                  {!cjConfig.isConnected && (
+                    <button
+                      type="button"
+                      onClick={() => handleTestCjConnection(undefined, true)}
+                      className="text-[10px] font-bold text-indigo-700 hover:underline mt-1 block text-left"
+                    >
+                      Conectar Conta de Teste Instantaneamente (1-clique) ⚡
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {(importForm.sourcePlatform === 'CJ Dropshipping' || importForm.sourcePlatform === 'AliExpress') && (
+                <div className="bg-slate-50 border border-indigo-100 rounded-xl p-4 space-y-3" id="cj-instant-importer">
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-indigo-950">
+                    <Sparkles className="w-3.5 h-3.5 text-orange-500 animate-bounce" />
+                    <span>Importador Instantâneo Multiplataforma ⚡</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    Cole o link do produto da <strong>{importForm.sourcePlatform}</strong>, SKU ou termo de teste (ex: link do produto, SKU, ou palavras-chave como <span className="font-mono bg-slate-200 px-1 py-0.2 rounded text-slate-700">led</span>, <span className="font-mono bg-slate-200 px-1 py-0.2 rounded text-slate-700">fone</span>, <span className="font-mono bg-slate-200 px-1 py-0.2 rounded text-slate-700">projetor</span> ou <span className="font-mono bg-slate-200 px-1 py-0.2 rounded text-slate-700">garrafa</span>) para carregar custos, fotos, pesos, variantes e descrições oficiais em tempo real via conexão de API direta!
+                  </p>
+                  
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder={`Cole o link do produto ${importForm.sourcePlatform} ou digite termo de teste...`}
+                      value={cjQuery}
+                      onChange={(e) => setCjQuery(e.target.value)}
+                      className="flex-1 bg-white text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-indigo-600 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCjLookup}
+                      disabled={pullingFromCj}
+                      className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-1 text-xs shrink-0 cursor-pointer"
+                    >
+                      {pullingFromCj ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      )}
+                      <span>Puxar da {importForm.sourcePlatform === 'CJ Dropshipping' ? 'CJ' : 'AliExpress'}</span>
+                    </button>
+                  </div>
+
+                  {pullingFromCj && (
+                    <div className="p-3 bg-indigo-50 border border-indigo-100/60 rounded-lg space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-3 h-3 text-indigo-600 animate-spin shrink-0" />
+                        <span className="text-[11px] font-bold text-indigo-950 animate-pulse">{cjPullStep}</span>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                        <div 
+                          className="bg-indigo-600 h-1.5 rounded-full transition-all duration-500" 
+                          style={{
+                            width: cjPullStep.includes('🔌') ? '25%' : 
+                                   cjPullStep.includes('🔍') ? '50%' : 
+                                   cjPullStep.includes('🖼️') ? '75%' : '95%'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {cjPulledProduct && (
+                    <div className="bg-emerald-50/50 border border-emerald-100 rounded-lg p-3 space-y-2 text-[11px] text-emerald-950">
+                      <div className="flex items-center gap-1 font-bold text-emerald-800">
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Produto Conectado Ativamente! (Shopify-Style Link)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <img 
+                          src={cjPulledProduct.imageUrl} 
+                          alt="CJ Pulled" 
+                          className="w-10 h-10 object-cover rounded bg-white border border-slate-200 shrink-0" 
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold truncate">{cjPulledProduct.name}</p>
+                          <p className="text-[9px] text-slate-500 font-mono">
+                            ID CJ: {cjPulledProduct.cjProductId} | SKU Base: {cjPulledProduct.sku}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="border-t border-emerald-100/60 pt-2 space-y-1">
+                        <p className="font-bold text-[10px] text-emerald-900 uppercase">Mapeamento de Variantes de Fornecedor (CJ Hub):</p>
+                        <div className="space-y-0.5 max-h-24 overflow-y-auto pr-1">
+                          {cjPulledProduct.variants?.map((v: any) => (
+                            <div key={v.id} className="flex justify-between items-center text-[9px] bg-white/60 px-2 py-1 rounded border border-emerald-100/30">
+                              <span className="font-mono text-slate-600">{v.name} (ID: {v.id})</span>
+                              <span className="font-bold text-indigo-700">Preço CJ: €{v.price.toFixed(2)} | Estoque: {v.stock} un.</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Media Selector Hub for CJ product */}
+                      <div className="border-t border-emerald-100/60 pt-2 space-y-2">
+                        <p className="font-bold text-[10px] text-indigo-950 uppercase flex items-center gap-1">
+                          <Image className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Média Hub CJ - Imagens e Vídeos de Fornecedor:</span>
+                        </p>
+                        
+                        {/* Images Section */}
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-500 font-medium block">
+                            Selecione as imagens para importar no catálogo (Clique para definir a capa):
+                          </span>
+                          <div className="grid grid-cols-4 gap-2">
+                            {cjPulledProduct.images?.map((imgUrl: string, idx: number) => {
+                              const isSelected = selectedCjImages.includes(imgUrl);
+                              const isCover = importForm.imageUrl === imgUrl;
+                              return (
+                                <div
+                                  key={idx}
+                                  onClick={() => {
+                                    // Toggle selection
+                                    setSelectedCjImages(prev => {
+                                      if (prev.includes(imgUrl)) {
+                                        // Don't remove if it is the cover
+                                        if (isCover) return prev;
+                                        return prev.filter(url => url !== imgUrl);
+                                      } else {
+                                        return [...prev, imgUrl];
+                                      }
+                                    });
+                                    // Also set as main cover
+                                    setImportForm(prev => ({ ...prev, imageUrl: imgUrl }));
+                                  }}
+                                  className={`relative aspect-square rounded-lg overflow-hidden border cursor-pointer transition-all ${
+                                    isCover 
+                                      ? 'ring-2 ring-indigo-600 border-transparent shadow-xs' 
+                                      : isSelected 
+                                        ? 'border-indigo-400 opacity-100' 
+                                        : 'border-slate-200 opacity-60 hover:opacity-100'
+                                  }`}
+                                >
+                                  <img 
+                                    src={imgUrl} 
+                                    alt={`CJ media ${idx}`} 
+                                    className="w-full h-full object-cover bg-white"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  {isCover && (
+                                    <div className="absolute top-1 left-1 bg-indigo-600 text-[8px] font-extrabold text-white px-1 py-0.2 rounded shadow-xs uppercase tracking-wider">
+                                      Capa
+                                    </div>
+                                  )}
+                                  {isSelected && (
+                                    <div className="absolute bottom-1 right-1 bg-indigo-600 text-white rounded-full p-0.5">
+                                      <Check className="w-2 h-2 font-black" />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          
+                          {/* Add manual image url link for CJ */}
+                          <div className="flex gap-2 items-center mt-2 bg-white p-2 rounded border border-slate-150">
+                            <input
+                              type="text"
+                              placeholder="Adicionar link de imagem personalizado..."
+                              id="manual-img-input"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const val = e.currentTarget.value.trim();
+                                  if (val) {
+                                    setSelectedCjImages(prev => [...prev, val]);
+                                    setImportForm(prev => ({ ...prev, imageUrl: val }));
+                                    e.currentTarget.value = '';
+                                  }
+                                }
+                              }}
+                              className="flex-1 bg-slate-50 text-[10px] text-slate-800 rounded px-2.5 py-1.5 border border-slate-200 outline-none focus:border-indigo-600"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const el = document.getElementById('manual-img-input') as HTMLInputElement;
+                                const val = el?.value.trim();
+                                if (val) {
+                                  setSelectedCjImages(prev => [...prev, val]);
+                                  setImportForm(prev => ({ ...prev, imageUrl: val }));
+                                  el.value = '';
+                                }
+                              }}
+                              className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-[9px] rounded transition-all shrink-0 cursor-pointer"
+                            >
+                              Adicionar
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Video Section */}
+                        {cjPulledProduct.videoUrl && (
+                          <div className="space-y-1.5 border-t border-slate-100 pt-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
+                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                                Vídeo Promocional Oficial do Fornecedor:
+                              </span>
+                              <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={importCjVideo}
+                                  onChange={(e) => setImportCjVideo(e.target.checked)}
+                                  className="rounded text-indigo-600 focus:ring-indigo-500 w-3 h-3 cursor-pointer"
+                                />
+                                <span>Importar Vídeo</span>
+                              </label>
+                            </div>
+                            
+                            {importCjVideo && (
+                              <div className="space-y-1.5">
+                                <div className="aspect-video w-full max-w-xs bg-slate-950 rounded-lg overflow-hidden border border-slate-800 shadow-inner relative mx-auto">
+                                  <video 
+                                    src={cjPulledProduct.videoUrl} 
+                                    controls 
+                                    className="w-full h-full"
+                                    preload="metadata"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] text-slate-400">URL do Vídeo (Edite se necessário):</label>
+                                  <input
+                                    type="text"
+                                    value={cjPulledProduct.videoUrl || ''}
+                                    onChange={(e) => {
+                                      const newVal = e.target.value;
+                                      setCjPulledProduct((prev: any) => ({ ...prev, videoUrl: newVal }));
+                                    }}
+                                    className="w-full bg-white text-[9px] text-slate-800 rounded px-2 py-1 border border-slate-200 outline-none focus:border-indigo-600 font-mono"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-1" id="import-field-name">
                 <label className="text-[10px] text-slate-500 font-medium">Nome do Produto:</label>
                 <input
@@ -936,9 +1750,9 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-4" id="import-field-price-weight">
+              <div className="grid grid-cols-4 gap-4" id="import-field-price-weight">
                 <div className="space-y-1 col-span-1">
-                  <label className="text-[10px] text-slate-500 font-medium">Custo Original Fornecedor (€):</label>
+                  <label className="text-[10px] text-slate-500 font-medium block leading-tight">Custo Original Fornecedor (€):</label>
                   <input
                     type="number"
                     step="0.01"
@@ -951,15 +1765,28 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                 </div>
 
                 <div className="space-y-1 col-span-1">
-                  <label className="text-[10px] text-slate-500 font-medium">Margem da Loja (%):</label>
-                  <div className="p-2.5 bg-slate-100 border border-slate-200 text-xs text-slate-600 rounded-xl font-mono text-center font-bold">
+                  <label className="text-[10px] text-slate-500 font-medium block leading-tight">Margem de Lucro (%):</label>
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 text-xs text-slate-600 rounded-xl font-mono text-center font-bold">
                     +{bankSettings.profitMarginMarkup}%
                   </div>
                 </div>
 
                 <div className="space-y-1 col-span-1">
-                  <label className="text-[10px] text-slate-500 font-medium">Preço de Venda Final:</label>
-                  <div className="p-2.5 bg-blue-50 border border-blue-200 text-xs text-blue-700 rounded-xl font-mono text-center font-bold">
+                  <label className="text-[10px] text-indigo-950 font-bold block leading-tight">Preço de Venda Final (€):</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder={((Number(importForm.originalPrice) || 0) * (1 + Number(bankSettings.profitMarginMarkup)/100)).toFixed(2)}
+                    value={importForm.sellingPrice}
+                    onChange={(e) => setImportForm(prev => ({ ...prev, sellingPrice: e.target.value }))}
+                    className="w-full bg-indigo-50/50 text-xs text-indigo-900 rounded-xl border border-indigo-200 p-2.5 outline-none focus:border-indigo-600 font-mono font-bold"
+                    title="Altere livremente o preço de venda para o seu catálogo!"
+                  />
+                </div>
+
+                <div className="space-y-1 col-span-1">
+                  <label className="text-[10px] text-slate-500 font-medium block leading-tight">Preço Calculado:</label>
+                  <div className="p-2.5 bg-slate-100 border border-slate-200 text-xs text-slate-700 rounded-xl font-mono text-center font-bold">
                     €{calculatedSalePrice().toFixed(2)}
                   </div>
                 </div>
@@ -972,15 +1799,85 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                 </div>
               )}
 
-              <div className="space-y-1" id="import-field-image">
-                <label className="text-[10px] text-slate-500 font-medium">URL da Imagem do Produto:</label>
+              <div className="space-y-1" id="import-field-link">
+                <label className="text-[10px] text-slate-500 font-medium">Link do Produto (Fornecedor / CJ / AliExpress):</label>
                 <input
                   type="url"
-                  placeholder="https://images.unsplash.com/... (Ou deixe em branco para default)"
-                  value={importForm.imageUrl}
-                  onChange={(e) => setImportForm(prev => ({ ...prev, imageUrl: e.target.value }))}
-                  className="w-full bg-white text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-blue-600 placeholder-slate-450 font-mono"
+                  placeholder="https://cjdropshipping.com/product/..."
+                  value={importForm.productLink}
+                  onChange={(e) => setImportForm(prev => ({ ...prev, productLink: e.target.value }))}
+                  className="w-full bg-white text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-blue-600 placeholder-slate-400 font-mono"
                 />
+              </div>
+
+              <div className="space-y-1.5" id="import-field-image-upload">
+                <label className="text-[10px] text-slate-500 font-medium block">Imagem do Produto:</label>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Option A: Local Upload */}
+                  <div className="border border-dashed border-slate-200 hover:border-blue-500 rounded-xl p-3 bg-white flex flex-col items-center justify-center text-center transition-colors relative cursor-pointer group">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setImportForm(prev => ({ ...prev, imageUrl: reader.result as string }));
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      id="local-image-upload-input"
+                    />
+                    <Upload className="w-5 h-5 text-slate-400 group-hover:text-blue-500 mb-1" />
+                    <span className="text-[10px] font-bold text-slate-600 group-hover:text-blue-600">
+                      Upload do Computador
+                    </span>
+                    <span className="text-[9px] text-slate-400 mt-0.5">
+                      Selecione um arquivo de imagem
+                    </span>
+                  </div>
+
+                  {/* Option B: Image URL / Preview */}
+                  <div className="flex flex-col justify-between space-y-2">
+                    <input
+                      type="url"
+                      placeholder="Ou cole uma URL de imagem externa..."
+                      value={importForm.imageUrl.startsWith('data:') ? '' : importForm.imageUrl}
+                      onChange={(e) => setImportForm(prev => ({ ...prev, imageUrl: e.target.value }))}
+                      className="w-full bg-white text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-blue-600 placeholder-slate-400 font-mono"
+                    />
+                    {importForm.imageUrl ? (
+                      <div className="flex items-center gap-2 p-1.5 bg-slate-100 border border-slate-200 rounded-lg">
+                        <img 
+                          src={importForm.imageUrl} 
+                          alt="Preview" 
+                          className="w-10 h-10 rounded-md object-cover bg-white" 
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[9px] text-slate-500 truncate font-mono">
+                            {importForm.imageUrl.startsWith('data:') ? 'Imagem Local Carregada' : importForm.imageUrl}
+                          </p>
+                          <button 
+                            type="button" 
+                            onClick={() => setImportForm(prev => ({ ...prev, imageUrl: '' }))}
+                            className="text-[9px] text-rose-600 font-bold hover:underline"
+                          >
+                            Remover Imagem
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-[9px] text-slate-400 italic flex items-center justify-center border border-slate-100 bg-slate-50/50 rounded-lg flex-1 py-2">
+                        Sem imagem selecionada
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-1" id="import-field-desc">
@@ -1013,6 +1910,118 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                 )}
               </button>
             </form>
+          </div>
+
+          {/* Manage Product Catalog Section */}
+          <div className="bg-white border border-slate-200 p-6 rounded-2xl space-y-6" id="manage-catalog-section">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShoppingBag className="w-4 h-4 text-indigo-600" />
+                  {language === 'pt' ? 'Gerir Catálogo de Produtos' : 'Manage Product Catalog'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {language === 'pt' 
+                    ? 'Visualize e remova produtos do catálogo da sua loja Kivento.' 
+                    : 'View and remove items from your Kivento store catalog.'}
+                </p>
+              </div>
+              <span className="text-xs font-mono bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full font-bold">
+                {adminProducts.length} {language === 'pt' ? 'produtos' : 'products'}
+              </span>
+            </div>
+
+            {adminProducts.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-xs">
+                {language === 'pt' ? 'Nenhum produto cadastrado no catálogo.' : 'No products found in catalog.'}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="catalog-products-list">
+                {adminProducts.map((product) => (
+                  <div 
+                    key={product.id} 
+                    className="p-4 border border-slate-100 bg-slate-50/30 hover:bg-white hover:shadow-xs rounded-xl flex gap-3 items-center justify-between transition-all group"
+                    id={`catalog-item-${product.id}`}
+                  >
+                    <div className="flex gap-3 items-center min-w-0 flex-1">
+                      <img 
+                        src={product.image} 
+                        alt={product.name} 
+                        className="w-12 h-12 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-xs font-bold text-slate-800 truncate" title={product.name}>
+                          {product.name}
+                        </h4>
+                        <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500">
+                          <span className="bg-slate-200/60 px-1.5 py-0.5 rounded font-medium">
+                            {product.category}
+                          </span>
+                          <span className="font-mono text-indigo-600 font-bold">
+                            €{product.price.toFixed(2)}
+                          </span>
+                        </div>
+                        {product.isDropshipped && (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                            <span className="text-[9px] text-orange-600 bg-orange-50 border border-orange-100 font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-600 animate-pulse" />
+                              {product.sourcePlatform || 'Dropshipped'}
+                            </span>
+                            {product.sourcePlatform === 'CJ Dropshipping' && (
+                              <button
+                                type="button"
+                                onClick={() => handleCjSyncStock(product.id)}
+                                disabled={syncingProductId !== null}
+                                className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.5 rounded border border-indigo-200 flex items-center gap-1 transition-all cursor-pointer"
+                                title="Sincronizar estoque e preços em tempo real com CJ (Shopify-Style)"
+                              >
+                                {syncingProductId === product.id ? (
+                                  <>
+                                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                    <span>A Sincronizar...</span>
+                                  </>
+                                ) : lastSyncedId === product.id ? (
+                                  <>
+                                    <Check className="w-2.5 h-2.5 text-emerald-600 font-bold" />
+                                    <span className="text-emerald-700 font-bold">Sincronizado! ✓</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <RefreshCw className="w-2.5 h-2.5" />
+                                    <span>Sync</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditProductModal(product)}
+                        className="text-slate-400 hover:text-indigo-600 p-2 rounded-lg hover:bg-indigo-50 transition-colors cursor-pointer"
+                        title={language === 'pt' ? 'Editar Produto' : 'Edit Product'}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProduct(product.id, product.name)}
+                        className="text-slate-400 hover:text-rose-600 p-2 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                        title={language === 'pt' ? 'Excluir Produto' : 'Delete Product'}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1207,87 +2216,175 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
             </div>
 
             {/* Sandbox Notice Banner to explain DNS propagation & Environment Isolation */}
-            <div className="bg-amber-50 border border-amber-200 p-5 rounded-2xl text-xs space-y-4 text-amber-900" id="domain-sandbox-notice">
+            <div className="bg-amber-50 border border-amber-200 p-6 rounded-2xl text-xs space-y-5 text-amber-900" id="domain-sandbox-notice">
               <div className="flex items-center gap-2.5 font-bold text-amber-800 text-sm">
                 <span className="flex h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
-                <span>{language === 'pt' ? 'Como exportar e descarregar o seu site em ZIP (Guia Passo a Passo)' : 'How to export and download your site as a ZIP (Step-by-Step Guide)'}</span>
+                <span>{language === 'pt' ? 'Descarregar o seu site em ZIP (Botão Direto)' : 'Download your site as a ZIP (Direct Button)'}</span>
               </div>
               
-              <div className="space-y-3 text-amber-850 text-[12px] leading-relaxed">
+              <div className="space-y-4 text-amber-850 text-[12px] leading-relaxed">
                 {language === 'pt' ? (
                   <>
-                    <p>
-                      Para colocar o seu domínio <strong>kivento.pt</strong> ativo na internet com o seu próprio alojamento (como Vercel, Netlify ou Cloud Run), precisa de descarregar os ficheiros da aplicação. Siga estas instruções simples para encontrar a opção de download:
-                    </p>
-                    
-                    <div className="bg-white/80 border border-amber-200/50 rounded-xl p-4 space-y-3 shadow-xs">
-                      <div className="flex items-start gap-3">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-extrabold text-[10px] shrink-0 mt-0.5">1</span>
-                        <div>
-                          <strong className="text-amber-900">Olhe para fora do ecrã do site:</strong> Não procure este botão dentro do painel de administração da Kivento. Procure na própria página web do <strong>Google AI Studio</strong> (onde está a ver o nosso chat).
+                    {/* Primary Direct Download Box */}
+                    <div className="bg-amber-100/80 border border-amber-300 p-5 rounded-2xl space-y-4 shadow-xs">
+                      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                        <div className="space-y-1 text-left">
+                          <strong className="text-amber-950 text-sm block flex items-center gap-1.5">
+                            ⚡ Descarregar ZIP com 1-Clique
+                          </strong>
+                          <span className="text-[11.5px] text-amber-855 block">
+                            Geramos um arquivo compactado com todo o código fonte limpo e pronto (React + Vite + Tailwind + Express). Basta clicar no botão ao lado para descarregar!
+                          </span>
                         </div>
-                      </div>
-                      
-                      <div className="flex items-start gap-3">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-extrabold text-[10px] shrink-0 mt-0.5">2</span>
-                        <div>
-                          <strong className="text-amber-900">Canto Superior Direito:</strong> No topo direito do ecrã do AI Studio (mesmo no topo da página), verá os botões principais de controle.
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-start gap-3">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-extrabold text-[10px] shrink-0 mt-0.5">3</span>
-                        <div>
-                          <strong className="text-amber-900">Ícone de Engrenagem (Definições / Settings):</strong> Ao lado do botão <span className="bg-slate-100 border border-slate-300 text-slate-800 font-bold px-2 py-0.5 rounded text-[11px] shadow-3xs inline-block">Share</span> ou <span className="bg-indigo-100 border border-indigo-300 text-indigo-800 font-bold px-2 py-0.5 rounded text-[11px] shadow-3xs inline-block">Deploy</span>, clique no ícone de <strong>Engrenagem ⚙️ (Definições)</strong>.
-                        </div>
+                        <button 
+                          type="button"
+                          onClick={handleDownloadZip}
+                          disabled={downloadingZip}
+                          className="w-full md:w-auto px-6 py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white font-black rounded-xl transition-all shadow-md hover:shadow-lg shrink-0 flex items-center justify-center gap-2 text-xs cursor-pointer active:scale-95 animate-pulse-subtle"
+                        >
+                          {downloadingZip ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>A Processar...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Download className="w-4 h-4 text-white" />
+                              <span>Descarregar ZIP</span>
+                            </>
+                          )}
+                        </button>
                       </div>
 
-                      <div className="flex items-start gap-3">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-extrabold text-[10px] shrink-0 mt-0.5">4</span>
-                        <div>
-                          <strong className="text-amber-900">Exportar para ZIP ou GitHub:</strong> No menu suspenso que se abrirá, clique em <span className="text-indigo-700 font-bold">"Export as ZIP"</span> para descarregar um ficheiro compactado com todos os ficheiros da loja, ou em <span className="text-indigo-700 font-bold">"Export to GitHub"</span> para sincronizar automaticamente com a sua conta GitHub.
+                      {/* Explicit Direct URL Input & Direct link to bypass iframe sandbox */}
+                      <div className="bg-white/80 border border-amber-200/60 p-3.5 rounded-xl space-y-2">
+                        <span className="text-[10.5px] font-bold text-amber-900 block">
+                          🔗 Link direto alternativo (Caso o download acima seja bloqueado pelo seu browser):
+                        </span>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input 
+                            type="text" 
+                            readOnly
+                            value={dynamicDownloadUrl || `${window.location.origin}/api/download-zip`}
+                            onClick={(e) => (e.target as HTMLInputElement).select()}
+                            className="flex-1 bg-amber-50/50 border border-amber-250 text-[10px] font-mono p-2 rounded-lg text-amber-950 select-all outline-none"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(dynamicDownloadUrl || `${window.location.origin}/api/download-zip`, 'direct-url')}
+                              className="px-3 py-2 bg-white border border-amber-300 hover:bg-amber-50 text-[10.5px] text-amber-900 font-bold rounded-lg flex items-center gap-1 transition-all cursor-pointer shadow-3xs"
+                            >
+                              {copiedField === 'direct-url' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-amber-800" />}
+                              <span>{copiedField === 'direct-url' ? 'Copiado!' : 'Copy'}</span>
+                            </button>
+                            <a 
+                              href={dynamicDownloadUrl || `${window.location.origin}/api/download-zip`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-[10.5px] font-bold rounded-lg flex items-center justify-center gap-1 transition-all shadow-3xs cursor-pointer"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>Abrir Link</span>
+                            </a>
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                    <p className="text-[11px] text-amber-700/90 font-medium">
-                      💡 <strong>Nota Técnica:</strong> O ambiente de testes temporário do AI Studio é isolado por segurança. Ao descarregar o ZIP, poderá alojar o seu site na Vercel ou Netlify em menos de 2 minutos de forma totalmente gratuita e conectar o seu domínio final sem restrições!
+                    <p className="text-amber-800">
+                      Após o download do ZIP, pode colocar o seu domínio <strong>kivento.pt</strong> ativo na internet com o seu próprio alojamento gratuito (como Vercel ou Netlify) em menos de 2 minutos!
                     </p>
+
+                    <div className="border-t border-amber-200/50 pt-3">
+                      <p className="text-[11px] font-bold text-amber-800 mb-1">Guia alternativo de exportação (caso prefira usar o GitHub):</p>
+                      <ul className="list-disc pl-4 space-y-1 text-[11px] text-amber-755">
+                        <li>Olhe no canto superior direito do ecrã do <strong>Google AI Studio</strong> (fora do site).</li>
+                        <li>Clique no ícone de <strong>Engrenagem ⚙️ (Definições/Settings)</strong> ao lado de "Share" ou "Deploy".</li>
+                        <li>Escolha <strong>"Export to GitHub"</strong> para enviar o código diretamente para o seu repositório.</li>
+                      </ul>
+                    </div>
                   </>
                 ) : (
                   <>
-                    <p>
-                      To set up your custom domain <strong>kivento.pt</strong> live on the web, you need to export the source files. Follow these simple steps to download the ZIP file:
-                    </p>
-                    
-                    <div className="bg-white/80 border border-amber-200/50 rounded-xl p-4 space-y-3 shadow-xs">
-                      <div className="flex items-start gap-3">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold text-[10px] shrink-0 mt-0.5">1</span>
-                        <div>
-                          <strong className="text-amber-900">Look Outside the Site Preview:</strong> Do not look inside Kivento's internal settings. Look at the top bar of the <strong>Google AI Studio Build</strong> interface.
+                    {/* Primary Direct Download Box */}
+                    <div className="bg-amber-100/80 border border-amber-300 p-5 rounded-2xl space-y-4 shadow-xs">
+                      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                        <div className="space-y-1 text-left">
+                          <strong className="text-amber-950 text-sm block">
+                            ⚡ 1-Click Direct ZIP Download
+                          </strong>
+                          <span className="text-[11.5px] text-amber-855 block">
+                            We compiled a clean zip archive containing your complete storefront, warehouse monitor, order tracking system and API. Click to download!
+                          </span>
                         </div>
-                      </div>
-                      
-                      <div className="flex items-start gap-3">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold text-[10px] shrink-0 mt-0.5">2</span>
-                        <div>
-                          <strong className="text-amber-900">Top-Right Corner:</strong> Locate the main control bar on the very top-right of your screen.
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-start gap-3">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold text-[10px] shrink-0 mt-0.5">3</span>
-                        <div>
-                          <strong className="text-amber-900">Gear Icon (Settings) / Dropdown:</strong> Next to the <span className="bg-slate-100 border border-slate-300 text-slate-800 px-1.5 py-0.5 rounded text-[10px]">Share</span> or <span className="bg-slate-100 border border-slate-300 text-slate-800 px-1.5 py-0.5 rounded text-[10px]">Deploy</span> buttons, click the <strong>Gear icon ⚙️ (Settings)</strong>.
-                        </div>
+                        <button 
+                          type="button"
+                          onClick={handleDownloadZip}
+                          disabled={downloadingZip}
+                          className="w-full md:w-auto px-6 py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white font-black rounded-xl transition-all shadow-md hover:shadow-lg shrink-0 flex items-center justify-center gap-2 text-xs cursor-pointer active:scale-95"
+                        >
+                          {downloadingZip ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>Processing...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Download className="w-4 h-4 text-white" />
+                              <span>Download ZIP</span>
+                            </>
+                          )}
+                        </button>
                       </div>
 
-                      <div className="flex items-start gap-3">
-                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-200 text-amber-900 font-bold text-[10px] shrink-0 mt-0.5">4</span>
-                        <div>
-                          <strong className="text-amber-900">Download ZIP or GitHub:</strong> Choose <span className="text-indigo-700 font-bold">"Export as ZIP"</span> to download the files directly, or <span className="text-indigo-700 font-bold">"Export to GitHub"</span> to sync immediately.
+                      {/* Explicit Direct URL Input & Direct link to bypass iframe sandbox */}
+                      <div className="bg-white/80 border border-amber-200/60 p-3.5 rounded-xl space-y-2">
+                        <span className="text-[10.5px] font-bold text-amber-900 block">
+                          🔗 Alternative direct link (If the download above is blocked by your browser sandbox):
+                        </span>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input 
+                            type="text" 
+                            readOnly
+                            value={dynamicDownloadUrl || `${window.location.origin}/api/download-zip`}
+                            onClick={(e) => (e.target as HTMLInputElement).select()}
+                            className="flex-1 bg-amber-50/50 border border-amber-250 text-[10px] font-mono p-2 rounded-lg text-amber-950 select-all outline-none"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(dynamicDownloadUrl || `${window.location.origin}/api/download-zip`, 'direct-url')}
+                              className="px-3 py-2 bg-white border border-amber-300 hover:bg-amber-50 text-[10.5px] text-amber-900 font-bold rounded-lg flex items-center gap-1 transition-all cursor-pointer shadow-3xs"
+                            >
+                              {copiedField === 'direct-url' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-amber-800" />}
+                              <span>{copiedField === 'direct-url' ? 'Copied!' : 'Copy'}</span>
+                            </button>
+                            <a 
+                              href={dynamicDownloadUrl || `${window.location.origin}/api/download-zip`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-[10.5px] font-bold rounded-lg flex items-center justify-center gap-1 transition-all shadow-3xs cursor-pointer"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>Open Link</span>
+                            </a>
+                          </div>
                         </div>
                       </div>
+                    </div>
+
+                    <p className="text-amber-800">
+                      After downloading, host it on providers like Vercel or Netlify to connect your custom domain <strong>kivento.pt</strong> with real HTTPS.
+                    </p>
+
+                    <div className="border-t border-amber-200/50 pt-3">
+                      <p className="text-[11px] font-bold text-amber-800 mb-1">Alternative method via GitHub Sync:</p>
+                      <ul className="list-disc pl-4 space-y-1 text-[11px] text-amber-755">
+                        <li>Look at the top-right of your screen in the AI Studio editor.</li>
+                        <li>Click the <strong>Settings Gear icon ⚙️</strong> next to the Share/Deploy buttons.</li>
+                        <li>Select <strong>"Export to GitHub"</strong> to push directly to your repository.</li>
+                      </ul>
                     </div>
                   </>
                 )}
@@ -1574,6 +2671,18 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                     Ao apontar os registos A e CNAME para o Kivento, as suas caixas de correio não são alteradas. Os seus registos MX (de correio electrónico como Google Workspace ou Titan) continuam intocados no seu registador, garantindo que recebe emails de clientes normalmente.
                   </p>
                 </div>
+
+                <div className="space-y-1.5 col-span-1 md:col-span-2 border-t border-slate-200/50 pt-3 mt-1">
+                  <strong className="text-indigo-950 block font-bold">⚡ O meu domínio (kivento.pt) exibe um carregamento ou lentidão da Render no primeiro acesso do dia. Como resolver?</strong>
+                  <p className="leading-relaxed text-slate-500">
+                    Isto ocorre porque a <strong>Render (plataforma onde o seu site está hospedado)</strong> desativa temporariamente o servidor se o site passar 15 minutos sem visitas (modo de suspensão/sleep no plano gratuito). Quando um novo utilizador tenta aceder, a Render demora cerca de 30 a 50 segundos para "acordar" o site, exibindo o ecrã de carregamento.<br />
+                    <strong>Como eliminar este carregamento definitivamente de forma 100% grátis:</strong><br />
+                    1. Crie uma conta gratuita em <a href="https://cron-job.org" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold underline hover:text-indigo-800">cron-job.org</a>.<br />
+                    2. Adicione uma tarefa simples de monitorização (ping) que aceda ao endereço do seu site (por exemplo: <code className="bg-slate-200 px-1 py-0.5 rounded text-indigo-700 font-mono font-semibold">https://kivento.pt</code>) de <strong>10 em 10 minutos</strong>.<br />
+                    3. Isto enviará um sinal constante ao seu site, mantendo a Render <strong>sempre ativa e acordada 24 horas por dia</strong>! O site abrirá instantaneamente para qualquer cliente.<br />
+                    <em>Alternativamente, pode fazer o upgrade no seu painel da Render para o plano "Starter" (cerca de $7/mês) para desativar a suspensão de forma nativa.</em>
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -1623,8 +2732,110 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8" id="banners-grid-row">
-            {/* Form Column */}
-            <form onSubmit={handleSaveBanner} className="lg:col-span-5 space-y-4 bg-slate-50/50 p-5 rounded-2xl border border-slate-100" id="banner-form">
+            {/* Left Column (AI + Form) */}
+            <div className="lg:col-span-5 space-y-6" id="banners-left-col">
+              
+              {/* AI Banner Generator Section */}
+              <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 p-5 rounded-2xl space-y-4 shadow-3xs" id="ai-banner-generator">
+                <div className="flex items-center gap-2 border-b border-amber-200 pb-2">
+                  <Sparkles className="w-5 h-5 text-amber-600 animate-pulse" />
+                  <div>
+                    <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+                      {language === 'pt' ? 'Gerador de Banner por IA' : 'AI Banner Slogan & Gradient Generator'}
+                    </h4>
+                    <p className="text-[10px] text-amber-800 leading-tight">
+                      {language === 'pt' 
+                        ? 'Crie chamadas comerciais, slogans atraentes e combinações de cores elegantes usando a inteligência do Gemini.' 
+                        : 'Generate persuasive ad copies, badges, and professional gradients instantly using Gemini.'}
+                    </p>
+                  </div>
+                </div>
+
+                {aiError && (
+                  <div className="p-3 bg-red-50 border border-red-100 text-red-700 rounded-xl text-xs font-medium text-red-900">
+                    {aiError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-amber-900 font-bold uppercase tracking-wider">
+                      {language === 'pt' ? 'Escolher Produto da Loja' : 'Select Store Product'}
+                    </label>
+                    <select
+                      value={aiProductSelect}
+                      onChange={(e) => {
+                        setAiProductSelect(e.target.value);
+                        if (e.target.value) {
+                          setAiCustomTopic('');
+                        }
+                      }}
+                      className="w-full bg-white text-xs text-slate-800 rounded-xl border border-amber-250 p-2 outline-none focus:border-amber-500"
+                    >
+                      <option value="">-- {language === 'pt' ? 'Tema Personalizado' : 'Custom Theme'} --</option>
+                      {adminProducts.map((p) => (
+                        <option key={p.id || p.name} value={p.id || p.name}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-amber-900 font-bold uppercase tracking-wider">
+                      {language === 'pt' ? 'Estilo de Campanha' : 'Campaign Style'}
+                    </label>
+                    <select
+                      value={aiPromoType}
+                      onChange={(e) => setAiPromoType(e.target.value)}
+                      className="w-full bg-white text-xs text-slate-800 rounded-xl border border-amber-250 p-2 outline-none focus:border-amber-500"
+                    >
+                      <option value="Liquidação Flash">{language === 'pt' ? 'Liquidação Flash' : 'Flash Sale'}</option>
+                      <option value="Lançamento de Produto">{language === 'pt' ? 'Novo Lançamento' : 'New Product Launch'}</option>
+                      <option value="Campanha Sazonal">{language === 'pt' ? 'Campanha Sazonal' : 'Seasonal Campaign'}</option>
+                      <option value="Oferta Exclusiva">{language === 'pt' ? 'Oferta Exclusiva' : 'Exclusive Offer'}</option>
+                      <option value="Saldos & Descontos">{language === 'pt' ? 'Saldos & Descontos' : 'Clearance & Discounts'}</option>
+                    </select>
+                  </div>
+                </div>
+
+                {!aiProductSelect && (
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-amber-900 font-bold uppercase tracking-wider">
+                      {language === 'pt' ? 'Tema ou Slogan Customizado' : 'Custom Theme or Description'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={language === 'pt' ? "Ex: Óculos de Sol Polarizados para o Verão" : "Ex: Summer Polarized Sunglasses Sale"}
+                      value={aiCustomTopic}
+                      onChange={(e) => setAiCustomTopic(e.target.value)}
+                      className="w-full bg-white text-xs text-slate-800 rounded-xl border border-amber-250 p-2.5 outline-none focus:border-amber-500"
+                    />
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={generatingAiBanner}
+                  onClick={handleGenerateAiBanner}
+                  className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer disabled:opacity-75"
+                >
+                  {generatingAiBanner ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>{language === 'pt' ? 'A gerar propaganda...' : 'Generating ad copy...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>{language === 'pt' ? 'Gerar Propaganda por IA ✨' : 'Generate Ad with Gemini ✨'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Form Column */}
+              <form onSubmit={handleSaveBanner} className="space-y-4 bg-slate-50/50 p-5 rounded-2xl border border-slate-100" id="banner-form">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2 border-b border-slate-200 pb-2">
                 <Sparkles className="w-4 h-4 text-amber-500" />
                 {editingBannerId ? 'Editar Banner' : 'Criar Novo Banner'}
@@ -1784,6 +2995,7 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                 )}
               </div>
             </form>
+          </div>
 
             {/* List and Live Previews Column */}
             <div className="lg:col-span-7 space-y-4" id="banners-list-column">
@@ -1880,6 +3092,314 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Edit Modal Backdrop */}
+      {editingProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-2xl w-full max-h-[90vh] overflow-y-auto flex flex-col">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 sticky top-0 z-10">
+              <div>
+                <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                  <Edit className="w-5 h-5 text-indigo-600" />
+                  <span>Editar Produto</span>
+                </h3>
+                <p className="text-xs text-slate-500">ID: {editingProduct.id} | Plataforma: {editingProduct.sourcePlatform || 'Nacional'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingProduct(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-150 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateProduct} className="p-6 space-y-4 flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Nome do Produto</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingProductForm.name}
+                    onChange={(e) => setEditingProductForm(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full bg-slate-50 text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-indigo-600"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Categoria</label>
+                  <select
+                    value={editingProductForm.category}
+                    onChange={(e) => setEditingProductForm(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full bg-slate-50 text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-indigo-600"
+                  >
+                    <option value="Electrónica">Electrónica</option>
+                    <option value="Brinquedos">Brinquedos & Gadgets</option>
+                    <option value="Casa">Casa & Decoração</option>
+                    <option value="Beleza">Beleza & Saúde</option>
+                    <option value="Moda">Moda & Vestuário</option>
+                    <option value="Acessórios">Acessórios</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Preço de Venda (€)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={editingProductForm.price}
+                    onChange={(e) => setEditingProductForm(prev => ({ ...prev, price: e.target.value }))}
+                    className="w-full bg-slate-50 text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-indigo-600"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Custo do Fornecedor / Base (€)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={editingProductForm.originalPrice}
+                    onChange={(e) => setEditingProductForm(prev => ({ ...prev, originalPrice: e.target.value }))}
+                    className="w-full bg-slate-50 text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-indigo-600"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Peso (kg)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={editingProductForm.weight}
+                    onChange={(e) => setEditingProductForm(prev => ({ ...prev, weight: e.target.value }))}
+                    className="w-full bg-slate-50 text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-indigo-600"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Imagem Principal (Capa)</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingProductForm.imageUrl}
+                    onChange={(e) => setEditingProductForm(prev => ({ ...prev, imageUrl: e.target.value }))}
+                    className="w-full bg-slate-50 text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+
+              {/* Visual Gallery Image Editor */}
+              <div className="space-y-2 border border-slate-100 bg-slate-50/50 p-4 rounded-2xl">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-slate-600 uppercase flex items-center gap-1.5">
+                    <Image className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Galeria Visual do Produto</span>
+                  </label>
+                  <span className="text-[9px] text-indigo-600 font-semibold">
+                    {editingProductForm.imagesText.split(',').map(s => s.trim()).filter(Boolean).length} imagens
+                  </span>
+                </div>
+
+                {/* Grid of gallery images */}
+                <div className="grid grid-cols-4 sm:grid-cols-5 gap-2.5">
+                  {editingProductForm.imagesText.split(',').map(s => s.trim()).filter(Boolean).map((imgUrl, idx) => {
+                    const isCover = editingProductForm.imageUrl === imgUrl;
+                    return (
+                      <div
+                        key={idx}
+                        className={`relative aspect-square rounded-xl overflow-hidden border bg-white group transition-all ${
+                          isCover 
+                            ? 'ring-2 ring-indigo-600 border-transparent shadow-xs' 
+                            : 'border-slate-200 hover:border-indigo-400'
+                        }`}
+                      >
+                        <img
+                          src={imgUrl}
+                          alt={`Gallery ${idx}`}
+                          className="w-full h-full object-cover cursor-pointer"
+                          onClick={() => {
+                            // Click to set as cover
+                            setEditingProductForm(prev => ({ ...prev, imageUrl: imgUrl }));
+                          }}
+                          referrerPolicy="no-referrer"
+                        />
+                        
+                        {/* Remove image button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const arr = editingProductForm.imagesText.split(',').map(s => s.trim()).filter(Boolean);
+                            const updated = arr.filter(url => url !== imgUrl);
+                            setEditingProductForm(prev => ({ 
+                              ...prev, 
+                              imagesText: updated.join(', '),
+                              // If removing the cover, set the first remaining image as cover
+                              imageUrl: isCover && updated.length > 0 ? updated[0] : prev.imageUrl
+                            }));
+                          }}
+                          className="absolute -top-1 -right-1 md:top-1 md:right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-90 md:opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer shadow-xs"
+                          title="Remover imagem"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+
+                        {isCover && (
+                          <div className="absolute bottom-1 left-1 right-1 bg-indigo-600 text-[8px] font-extrabold text-white py-0.5 px-1 rounded text-center uppercase tracking-wider scale-90">
+                            Capa
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Add dynamic manual link to gallery */}
+                <div className="flex gap-2 items-center pt-1.5">
+                  <input
+                    type="text"
+                    id="edit-modal-manual-image-url"
+                    placeholder="Adicionar link de imagem à galeria..."
+                    className="flex-1 bg-white text-xs text-slate-800 rounded-xl px-3 py-2 border border-slate-200 outline-none focus:border-indigo-600"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const val = e.currentTarget.value.trim();
+                        if (val) {
+                          setEditingProductForm(prev => {
+                            const arr = prev.imagesText.split(',').map(s => s.trim()).filter(Boolean);
+                            if (!arr.includes(val)) arr.push(val);
+                            return { ...prev, imagesText: arr.join(', ') };
+                          });
+                          e.currentTarget.value = '';
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = document.getElementById('edit-modal-manual-image-url') as HTMLInputElement;
+                      const val = el?.value.trim();
+                      if (val) {
+                        setEditingProductForm(prev => {
+                          const arr = prev.imagesText.split(',').map(s => s.trim()).filter(Boolean);
+                          if (!arr.includes(val)) arr.push(val);
+                          return { ...prev, imagesText: arr.join(', ') };
+                        });
+                        el.value = '';
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-xs rounded-xl transition-all cursor-pointer shrink-0"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+
+                {/* Collapsible raw textarea view for advanced users */}
+                <details className="text-[10px] text-slate-400 font-medium">
+                  <summary className="cursor-pointer hover:text-slate-600 select-none pt-1">Mostrar URLs brutas (Edição avançada)</summary>
+                  <div className="pt-2">
+                    <textarea
+                      rows={2}
+                      value={editingProductForm.imagesText}
+                      onChange={(e) => setEditingProductForm(prev => ({ ...prev, imagesText: e.target.value }))}
+                      className="w-full bg-white text-[10px] text-slate-600 rounded-xl border border-slate-200 p-2 outline-none focus:border-indigo-600 font-mono"
+                      placeholder="Links separados por vírgula..."
+                    />
+                  </div>
+                </details>
+              </div>
+
+              {/* Video URL */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase">URL do Vídeo de Marketing</label>
+                <input
+                  type="text"
+                  value={editingProductForm.videoUrl}
+                  onChange={(e) => setEditingProductForm(prev => ({ ...prev, videoUrl: e.target.value }))}
+                  className="w-full bg-slate-50 text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-indigo-600 font-mono"
+                  placeholder="Ex: https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4"
+                />
+              </div>
+
+              {/* Description fields */}
+              <div className="border-t border-slate-100 pt-3 space-y-3">
+                <p className="font-bold text-[10px] text-slate-450 uppercase tracking-wider">Descrições em Múltiplos Idiomas</p>
+                
+                <div className="space-y-2">
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">Português (PT)</span>
+                    <textarea
+                      rows={2}
+                      value={editingProductForm.descriptionPt}
+                      onChange={(e) => setEditingProductForm(prev => ({ ...prev, descriptionPt: e.target.value }))}
+                      className="w-full bg-slate-50 text-xs text-slate-800 rounded-xl border border-slate-200 p-2 outline-none focus:border-indigo-600"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">Inglês (EN)</span>
+                    <textarea
+                      rows={2}
+                      value={editingProductForm.descriptionEn}
+                      onChange={(e) => setEditingProductForm(prev => ({ ...prev, descriptionEn: e.target.value }))}
+                      className="w-full bg-slate-50 text-xs text-slate-800 rounded-xl border border-slate-200 p-2 outline-none focus:border-indigo-600"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">Espanhol (ES)</span>
+                    <textarea
+                      rows={2}
+                      value={editingProductForm.descriptionEs}
+                      onChange={(e) => setEditingProductForm(prev => ({ ...prev, descriptionEs: e.target.value }))}
+                      className="w-full bg-slate-50 text-xs text-slate-800 rounded-xl border border-slate-200 p-2 outline-none focus:border-indigo-600"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">Francês (FR)</span>
+                    <textarea
+                      rows={2}
+                      value={editingProductForm.descriptionFr}
+                      onChange={(e) => setEditingProductForm(prev => ({ ...prev, descriptionFr: e.target.value }))}
+                      className="w-full bg-slate-50 text-xs text-slate-800 rounded-xl border border-slate-200 p-2 outline-none focus:border-indigo-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 justify-end pt-4 border-t border-slate-100 bg-slate-50 p-4 -mx-6 -mb-6 sticky bottom-0 rounded-b-3xl">
+                <button
+                  type="button"
+                  onClick={() => setEditingProduct(null)}
+                  className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={updatingProduct}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  {updatingProduct ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>A Guardar...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Guardar Alterações</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

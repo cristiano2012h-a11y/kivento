@@ -10,6 +10,9 @@ export interface Product {
   isDropshipped?: boolean;
   originalPrice?: number;
   sourcePlatform?: string;
+  productLink?: string;
+  images?: string[];
+  videoUrl?: string;
 }
 
 export interface Warehouse {
