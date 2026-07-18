@@ -1604,7 +1604,7 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                         {/* Images Section */}
                         <div className="space-y-1">
                           <span className="text-[10px] text-slate-500 font-medium block">
-                            Selecione as imagens para importar no catálogo (Clique para definir a capa):
+                            Selecione as imagens para importar no catálogo. Clique em "Definir Capa" para definir como imagem principal (Capa):
                           </span>
                           <div className="grid grid-cols-4 gap-2">
                             {cjPulledProduct.images?.map((imgUrl: string, idx: number) => {
@@ -1614,7 +1614,7 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                                 <div
                                   key={idx}
                                   onClick={() => {
-                                    // Toggle selection
+                                    // Toggle selection only
                                     setSelectedCjImages(prev => {
                                       if (prev.includes(imgUrl)) {
                                         // Don't remove if it is the cover
@@ -1624,10 +1624,8 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                                         return [...prev, imgUrl];
                                       }
                                     });
-                                    // Also set as main cover
-                                    setImportForm(prev => ({ ...prev, imageUrl: imgUrl }));
                                   }}
-                                  className={`relative aspect-square rounded-lg overflow-hidden border cursor-pointer transition-all ${
+                                  className={`relative aspect-square rounded-lg overflow-hidden border cursor-pointer transition-all group ${
                                     isCover 
                                       ? 'ring-2 ring-indigo-600 border-transparent shadow-xs' 
                                       : isSelected 
@@ -1641,11 +1639,29 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                                     className="w-full h-full object-cover bg-white"
                                     referrerPolicy="no-referrer"
                                   />
-                                  {isCover && (
-                                    <div className="absolute top-1 left-1 bg-indigo-600 text-[8px] font-extrabold text-white px-1 py-0.2 rounded shadow-xs uppercase tracking-wider">
-                                      Capa
-                                    </div>
-                                  )}
+                                  
+                                  {/* Cover / Capa Selector */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation(); // Avoid triggering selection toggle
+                                      // Set as cover
+                                      setImportForm(prev => ({ ...prev, imageUrl: imgUrl }));
+                                      // Ensure it is also selected in gallery
+                                      setSelectedCjImages(prev => {
+                                        if (prev.includes(imgUrl)) return prev;
+                                        return [...prev, imgUrl];
+                                      });
+                                    }}
+                                    className={`absolute top-1 left-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider transition-all shadow-xs cursor-pointer ${
+                                      isCover
+                                        ? 'bg-indigo-600 text-white opacity-100'
+                                        : 'bg-white/90 text-slate-700 hover:bg-white hover:text-indigo-600 opacity-0 group-hover:opacity-100'
+                                    }`}
+                                  >
+                                    {isCover ? '⭐ Capa' : 'Definir Capa'}
+                                  </button>
+
                                   {isSelected && (
                                     <div className="absolute bottom-1 right-1 bg-indigo-600 text-white rounded-full p-0.5">
                                       <Check className="w-2 h-2 font-black" />
