@@ -3,7 +3,7 @@ import { TRANSLATIONS } from '../data/mockData';
 import { 
   TrendingUp, Plus, ShieldCheck, DollarSign, Smartphone, CreditCard, 
   Building, Check, Loader2, Info, ExternalLink, RefreshCw, Layers, BarChart3,
-  Image, Trash2, Edit, Sparkles, Eye, EyeOff, Globe, Copy, Download, ShoppingBag, Upload, X
+  Image, Trash2, Edit, Sparkles, Eye, EyeOff, Globe, Copy, Download, ShoppingBag, Upload, X, Video, Film
 } from 'lucide-react';
 import { WarehouseMonitor } from './WarehouseMonitor';
 import { AnalyticsPanel } from './AnalyticsPanel';
@@ -84,8 +84,12 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
     imageUrl: '',
     sourcePlatform: 'AliExpress',
     description: '',
-    productLink: ''
+    productLink: '',
+    videoUrl: ''
   });
+
+  const [manualImages, setManualImages] = useState<string[]>([]);
+  const [readingVideo, setReadingVideo] = useState(false);
 
   // Banners state
   const [banners, setBanners] = useState<PromoBanner[]>([]);
@@ -687,8 +691,8 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
           sourcePlatform: importForm.sourcePlatform,
           description: importForm.description,
           productLink: importForm.productLink,
-          images: selectedCjImages.length > 0 ? selectedCjImages : [importForm.imageUrl],
-          videoUrl: ((importForm.sourcePlatform === 'CJ Dropshipping' || importForm.sourcePlatform === 'AliExpress') && importCjVideo) ? (cjPulledProduct?.videoUrl || '') : ''
+          images: selectedCjImages.length > 0 ? selectedCjImages : (manualImages.length > 0 ? manualImages : [importForm.imageUrl]),
+          videoUrl: importForm.videoUrl || (((importForm.sourcePlatform === 'CJ Dropshipping' || importForm.sourcePlatform === 'AliExpress') && importCjVideo) ? (cjPulledProduct?.videoUrl || '') : '')
         })
       });
 
@@ -709,9 +713,11 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
           weight: '0.4',
           imageUrl: '',
           description: '',
-          productLink: ''
+          productLink: '',
+          videoUrl: ''
         }));
         setSelectedCjImages([]);
+        setManualImages([]);
         
         // Notify parent to fetch products
         onProductImported();
@@ -1811,7 +1817,9 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
               </div>
 
               <div className="space-y-1.5" id="import-field-image-upload">
-                <label className="text-[10px] text-slate-500 font-medium block">Imagem do Produto:</label>
+                <label className="text-[10px] text-slate-500 font-semibold block uppercase tracking-wider">
+                  Galeria do Produto (Adicione várias imagens!):
+                </label>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {/* Option A: Local Upload */}
@@ -1819,14 +1827,28 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                     <input
                       type="file"
                       accept="image/*"
+                      multiple
                       onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onloadend = () => {
-                            setImportForm(prev => ({ ...prev, imageUrl: reader.result as string }));
-                          };
-                          reader.readAsDataURL(file);
+                        const files = e.target.files;
+                        if (files && files.length > 0) {
+                          Array.from(files).forEach((file: File) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              const result = reader.result as string;
+                              setManualImages(prev => {
+                                if (prev.includes(result)) return prev;
+                                const updated = [...prev, result];
+                                setImportForm(f => {
+                                  if (!f.imageUrl) {
+                                    return { ...f, imageUrl: result };
+                                  }
+                                  return f;
+                                });
+                                return updated;
+                              });
+                            };
+                            reader.readAsDataURL(file);
+                          });
                         }
                       }}
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
@@ -1834,50 +1856,232 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                     />
                     <Upload className="w-5 h-5 text-slate-400 group-hover:text-blue-500 mb-1" />
                     <span className="text-[10px] font-bold text-slate-600 group-hover:text-blue-600">
-                      Upload do Computador
+                      Upload do Computador (Múltiplas)
                     </span>
                     <span className="text-[9px] text-slate-400 mt-0.5">
-                      Selecione um arquivo de imagem
+                      Selecione um ou mais ficheiros de imagem
                     </span>
                   </div>
 
                   {/* Option B: Image URL / Preview */}
-                  <div className="flex flex-col justify-between space-y-2">
-                    <input
-                      type="url"
-                      placeholder="Ou cole uma URL de imagem externa..."
-                      value={importForm.imageUrl.startsWith('data:') ? '' : importForm.imageUrl}
-                      onChange={(e) => setImportForm(prev => ({ ...prev, imageUrl: e.target.value }))}
-                      className="w-full bg-white text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-blue-600 placeholder-slate-400 font-mono"
-                    />
-                    {importForm.imageUrl ? (
-                      <div className="flex items-center gap-2 p-1.5 bg-slate-100 border border-slate-200 rounded-lg">
-                        <img 
-                          src={importForm.imageUrl} 
-                          alt="Preview" 
-                          className="w-10 h-10 rounded-md object-cover bg-white" 
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[9px] text-slate-500 truncate font-mono">
-                            {importForm.imageUrl.startsWith('data:') ? 'Imagem Local Carregada' : importForm.imageUrl}
-                          </p>
-                          <button 
-                            type="button" 
-                            onClick={() => setImportForm(prev => ({ ...prev, imageUrl: '' }))}
-                            className="text-[9px] text-rose-600 font-bold hover:underline"
-                          >
-                            Remover Imagem
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-[9px] text-slate-400 italic flex items-center justify-center border border-slate-100 bg-slate-50/50 rounded-lg flex-1 py-2">
-                        Sem imagem selecionada
-                      </div>
-                    )}
+                  <div className="flex flex-col justify-center space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        id="manual-url-image-input"
+                        placeholder="Cole um link de imagem externa..."
+                        className="flex-1 bg-white text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-blue-600 placeholder-slate-400 font-mono"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const val = e.currentTarget.value.trim();
+                            if (val) {
+                              setManualImages(prev => {
+                                if (prev.includes(val)) return prev;
+                                const updated = [...prev, val];
+                                setImportForm(f => {
+                                  if (!f.imageUrl) {
+                                    return { ...f, imageUrl: val };
+                                  }
+                                  return f;
+                                });
+                                return updated;
+                              });
+                              e.currentTarget.value = '';
+                            }
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const el = document.getElementById('manual-url-image-input') as HTMLInputElement;
+                          const val = el?.value.trim();
+                          if (val) {
+                            setManualImages(prev => {
+                              if (prev.includes(val)) return prev;
+                              const updated = [...prev, val];
+                              setImportForm(f => {
+                                if (!f.imageUrl) {
+                                  return { ...f, imageUrl: val };
+                                }
+                                return f;
+                              });
+                              return updated;
+                            });
+                            el.value = '';
+                          }
+                        }}
+                        className="px-3.5 py-2.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold text-xs rounded-xl transition-all cursor-pointer shrink-0"
+                      >
+                        Adicionar
+                      </button>
+                    </div>
+                    <span className="text-[9px] text-slate-400">
+                      Escreva ou cole o link direto da imagem e clique em "Adicionar"
+                    </span>
                   </div>
                 </div>
+
+                {/* Visual Gallery Grid for New Product */}
+                {manualImages.length > 0 && (
+                  <div className="mt-3.5 space-y-2 border border-slate-100 bg-slate-50/50 p-4 rounded-xl">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-600 font-bold uppercase flex items-center gap-1.5">
+                        <Image className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Imagens da Galeria ({manualImages.length})</span>
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-semibold italic">
+                        Clique para definir a imagem de Capa (principal)
+                      </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                      {manualImages.map((imgUrl, idx) => {
+                        const isCover = importForm.imageUrl === imgUrl;
+                        return (
+                          <div
+                            key={idx}
+                            className={`relative aspect-square rounded-xl overflow-hidden border bg-white group transition-all cursor-pointer ${
+                              isCover 
+                                ? 'ring-2 ring-blue-600 border-transparent shadow-xs' 
+                                : 'border-slate-200 hover:border-blue-400'
+                            }`}
+                            onClick={() => {
+                              setImportForm(prev => ({ ...prev, imageUrl: imgUrl }));
+                            }}
+                          >
+                            <img
+                              src={imgUrl}
+                              alt={`New Gallery ${idx}`}
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                            
+                            {/* Remove button */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation(); // Avoid triggering cover select
+                                const updated = manualImages.filter(url => url !== imgUrl);
+                                setManualImages(updated);
+                                if (isCover) {
+                                  setImportForm(prev => ({
+                                    ...prev,
+                                    imageUrl: updated.length > 0 ? updated[0] : ''
+                                  }));
+                                }
+                              }}
+                              className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-90 transition-opacity cursor-pointer shadow-xs"
+                              title="Remover"
+                            >
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+
+                            {isCover && (
+                              <div className="absolute bottom-1 left-1 right-1 bg-blue-600 text-[8px] font-extrabold text-white py-0.5 px-0.5 rounded text-center uppercase tracking-wider scale-90">
+                                Capa
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Video Upload or URL Input Section */}
+              <div className="space-y-1.5" id="import-field-video-upload">
+                <label className="text-[10px] text-slate-500 font-semibold block uppercase tracking-wider">
+                  Vídeo de Demonstração (Opcional):
+                </label>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Option A: Local Video Upload */}
+                  <div className="relative border border-dashed border-slate-200 hover:border-blue-400 bg-slate-50/50 hover:bg-blue-50/10 rounded-xl p-4 flex flex-col items-center justify-center text-center transition-all group min-h-[100px]">
+                    <input
+                      type="file"
+                      accept="video/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setReadingVideo(true);
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setImportForm(prev => ({ ...prev, videoUrl: reader.result as string }));
+                            setReadingVideo(false);
+                          };
+                          reader.onerror = () => {
+                            setReadingVideo(false);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    {readingVideo ? (
+                      <>
+                        <Loader2 className="w-5 h-5 text-blue-600 animate-spin mb-1" />
+                        <span className="text-[10px] font-bold text-blue-600 animate-pulse">
+                          A converter vídeo...
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Video className="w-5 h-5 text-slate-400 group-hover:text-blue-500 mb-1" />
+                        <span className="text-[10px] font-bold text-slate-600 group-hover:text-blue-600">
+                          Upload do Computador (Vídeo)
+                        </span>
+                        <span className="text-[9px] text-slate-400 mt-0.5">
+                          Selecione um ficheiro de vídeo (.mp4, .webm, etc)
+                        </span>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Option B: Video Link Input */}
+                  <div className="flex flex-col justify-center space-y-2">
+                    <input
+                      type="url"
+                      placeholder="Ou cole um link de vídeo direto (.mp4)..."
+                      value={importForm.videoUrl.startsWith('data:') ? '' : importForm.videoUrl}
+                      onChange={(e) => setImportForm(prev => ({ ...prev, videoUrl: e.target.value }))}
+                      className="w-full bg-white text-xs text-slate-800 rounded-xl border border-slate-200 p-2.5 outline-none focus:border-blue-600 placeholder-slate-400 font-mono"
+                    />
+                    <span className="text-[9px] text-slate-400">
+                      Cole um link externo contendo o vídeo do produto
+                    </span>
+                  </div>
+                </div>
+
+                {/* Video Preview and Clear Option */}
+                {importForm.videoUrl && (
+                  <div className="mt-3.5 space-y-2 border border-slate-100 bg-slate-50/50 p-4 rounded-xl">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-600 font-bold uppercase flex items-center gap-1.5">
+                        <Film className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Visualização do Vídeo</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setImportForm(prev => ({ ...prev, videoUrl: '' }))}
+                        className="text-[9px] text-red-600 font-bold hover:underline hover:text-red-700 flex items-center gap-1 cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                        <span>Remover Vídeo</span>
+                      </button>
+                    </div>
+                    
+                    <div className="aspect-video w-full max-w-sm bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-inner relative mx-auto">
+                      <video
+                        src={importForm.videoUrl}
+                        controls
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1" id="import-field-desc">

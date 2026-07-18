@@ -196,7 +196,7 @@ function generateCheckpoints(
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json());
 
@@ -205,29 +205,50 @@ async function startServer() {
   // Helper to proxy image URLs if they are from restricted CDNs (e.g., CJ Dropshipping / Alibaba)
   function getProxiedImageUrl(url: string): string {
     if (!url) return '';
-    const lowerUrl = url.toLowerCase();
-    if (
-      lowerUrl.includes('cjdropshipping') ||
-      lowerUrl.includes('aliyuncs') ||
-      lowerUrl.includes('alicdn') ||
-      lowerUrl.includes('cc-west-cdn') ||
-      lowerUrl.includes('cj-image') ||
-      lowerUrl.includes('aliexpress') ||
-      lowerUrl.includes('1688') ||
-      lowerUrl.includes('alicdn.com')
-    ) {
-      return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+    let cleanedUrl = url.trim();
+    if (cleanedUrl.startsWith('//')) {
+      cleanedUrl = 'https:' + cleanedUrl;
     }
-    return url;
+    
+    // If it is already a proxied URL, don't double proxy!
+    if (cleanedUrl.includes('/api/proxy-image?url=')) {
+      return cleanedUrl;
+    }
+    
+    // Check if it's a relative path, local data URI, or localhost
+    if (
+      cleanedUrl.startsWith('/') || 
+      cleanedUrl.startsWith('data:') || 
+      cleanedUrl.startsWith('blob:') || 
+      cleanedUrl.startsWith('http://localhost') || 
+      cleanedUrl.startsWith('https://localhost') ||
+      cleanedUrl.includes('127.0.0.1')
+    ) {
+      return cleanedUrl;
+    }
+
+    // Proxy all other external images (http or https) to completely bypass hotlinking protection
+    if (cleanedUrl.startsWith('http://') || cleanedUrl.startsWith('https://')) {
+      return `/api/proxy-image?url=${encodeURIComponent(cleanedUrl)}`;
+    }
+    
+    return cleanedUrl;
   }
 
   // 1a_proxy. Secure image proxy for CJ Dropshipping & AliExpress hotlinked-blocked images
   app.get('/api/proxy-image', async (req, res) => {
-    const imageUrl = req.query.url as string;
+    let imageUrl = req.query.url as string;
     if (!imageUrl) {
       return res.status(400).send('No image URL specified');
     }
+    
+    imageUrl = imageUrl.trim();
+    if (imageUrl.startsWith('//')) {
+      imageUrl = 'https:' + imageUrl;
+    }
+    
     try {
+      // First attempt: with CJ referer headers
       const response = await fetch(imageUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -235,9 +256,29 @@ async function startServer() {
           'Referer': 'https://cjdropshipping.com/',
         }
       });
+      
       if (!response.ok) {
-        return res.redirect(imageUrl);
+        // Second attempt: standard fetch without referer
+        const secondTry = await fetch(imageUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
+            'Accept': 'image/*',
+          }
+        });
+        
+        if (secondTry.ok) {
+          const contentType = secondTry.headers.get('content-type') || 'image/jpeg';
+          res.setHeader('Content-Type', contentType);
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          const arrayBuffer = await secondTry.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          return res.send(buffer);
+        }
+        
+        // If both fail, redirect to a highly reliable placeholder instead of redirecting to the blocked URL
+        return res.redirect('https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80');
       }
+      
       const contentType = response.headers.get('content-type') || 'image/jpeg';
       res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
@@ -247,7 +288,7 @@ async function startServer() {
       res.send(buffer);
     } catch (error) {
       console.error('Error proxying image:', error);
-      res.redirect(imageUrl);
+      res.redirect('https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80');
     }
   });
   
@@ -1048,6 +1089,207 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
       console.error('Webhook error:', err);
       res.status(500).json({ error: 'Erro interno ao processar webhook da CJ: ' + (err as Error).message });
     }
+  });
+
+  // 1f. Shopify-Style OAuth and API Emulation for Direct CJ Dropshipping Integration
+  // This allows the merchant to select "Shopify" inside the CJ Dropshipping panel, type their domain (kivento.pt or preview URL),
+  // and have the integration connect successfully and import products automatically.
+
+  // 1f_oauth_authorize: Handles the initial Shopify OAuth redirect from CJ Dropshipping
+  app.get('/admin/oauth/authorize', (req, res) => {
+    const { client_id, scope, redirect_uri, state, shop } = req.query;
+    console.log(`Shopify OAuth Authorization requested for shop: ${shop}`);
+    
+    if (redirect_uri) {
+      // Instantly authorize and redirect back with a dummy code and state
+      const redirectUrl = `${redirect_uri}?code=dummy_shopify_token_123&state=${state}&shop=${shop}`;
+      return res.redirect(redirectUrl);
+    }
+    
+    res.status(400).send('Missing redirect_uri in Shopify OAuth handshake.');
+  });
+
+  // 1f_oauth_token: CJ Dropshipping backend exchanges the dummy code for an access token
+  app.post('/admin/oauth/access_token', (req, res) => {
+    console.log('Shopify OAuth Access Token requested by CJ Dropshipping backend');
+    res.json({
+      access_token: 'dummy_shopify_token_123',
+      scope: 'write_products,read_products,write_orders,read_orders,write_inventory,read_inventory'
+    });
+  });
+
+  // 1f_shop_info: CJ checks the shop details to confirm it's connected
+  app.get('/admin/api/:version/shop.json', (req, res) => {
+    res.json({
+      shop: {
+        id: 123456789,
+        name: "Kivento",
+        email: "suporte@kivento.pt",
+        domain: "kivento.pt",
+        myshopify_domain: "kivento.myshopify.com",
+        country: "PT",
+        province: "Lisboa",
+        city: "Lisboa",
+        currency: "EUR",
+        money_format: "€{{amount}}",
+        primary_locale: "pt"
+      }
+    });
+  });
+
+  // 1f_locations: CJ looks up locations to assign inventory
+  app.get('/admin/api/:version/locations.json', (req, res) => {
+    res.json({
+      locations: [
+        {
+          id: 901234567,
+          name: "Kivento Central Warehouse",
+          address1: "Rua Central, Lisboa",
+          city: "Lisboa",
+          country: "PT",
+          active: true
+        }
+      ]
+    });
+  });
+
+  // 1f_products_get: CJ may verify existing products
+  app.get('/admin/api/:version/products.json', (req, res) => {
+    // Map our local products to Shopify-style products
+    const shopifyProducts = products.map(p => ({
+      id: Number(p.id.replace(/[^0-9]/g, '').substring(0, 9)) || 123456,
+      title: p.name,
+      body_html: p.description?.pt || '',
+      vendor: p.sourcePlatform || 'CJ Dropshipping',
+      product_type: p.category,
+      images: (p.images || []).map((img, idx) => ({ id: idx, src: img })),
+      variants: [
+        {
+          id: Number(p.id.replace(/[^0-9]/g, '').substring(1, 10)) || 654321,
+          title: "Padrão",
+          price: String(p.price),
+          sku: p.id,
+          inventory_quantity: Object.values(p.stock || {}).reduce((a, b) => a + b, 0)
+        }
+      ]
+    }));
+    res.json({ products: shopifyProducts });
+  });
+
+  // 1f_products_create: THIS IS CRITICAL! This is called when CJ "pushes/lists" a product from their panel!
+  app.post('/admin/api/:version/products.json', (req, res) => {
+    try {
+      console.log('Shopify API - Product creation requested by CJ Dropshipping push action!');
+      const { product } = req.body;
+      if (!product) {
+        return res.status(400).json({ error: 'Falta o objeto "product" no corpo da requisição.' });
+      }
+
+      const name = product.title || 'Produto Importado CJ';
+      const description = product.body_html || '';
+      const category = product.product_type || 'Geral';
+      
+      let imageUrl = '';
+      let images: string[] = [];
+      if (product.images && Array.isArray(product.images)) {
+        images = product.images.map((img: any) => img.src || img.url).filter(Boolean);
+        imageUrl = images[0] || '';
+      } else if (product.image) {
+        imageUrl = product.image.src || product.image.url || '';
+        images = [imageUrl];
+      }
+
+      let originalPrice = 10.0;
+      let sku = 'CJ-' + Math.floor(100000 + Math.random() * 900000);
+      let weight = 0.5;
+
+      if (product.variants && Array.isArray(product.variants) && product.variants.length > 0) {
+        const mainVar = product.variants[0];
+        originalPrice = Number(mainVar.price) || 10.0;
+        sku = mainVar.sku || sku;
+        weight = Number(mainVar.weight) || 0.5;
+      }
+
+      const proxiedImageUrl = getProxiedImageUrl(imageUrl);
+      const proxiedImages = images.map(getProxiedImageUrl);
+
+      const markupMultiplier = 1 + (Number(shopSettings.profitMarginMarkup) / 100);
+      const salePrice = Math.round(originalPrice * markupMultiplier * 100) / 100;
+
+      const newProduct: Product = {
+        id: `p-cj-push-${Date.now()}`,
+        name,
+        category,
+        price: salePrice,
+        image: proxiedImageUrl || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80',
+        weight: Number(weight) || 0.5,
+        description: {
+          pt: description || `Produto importado automaticamente via Shopify API Emulation de CJ Dropshipping.`,
+          en: `Product automatically imported via CJ Dropshipping Shopify API Emulation.`,
+          es: `Producto importado automáticamente vía Emulación de Shopify de CJ Dropshipping.`,
+          fr: `Produit importé automatiquement via l'émulation Shopify de CJ Dropshipping.`
+        },
+        stock: {
+          'wh-lis': Math.floor(50 + Math.random() * 50),
+          'wh-mad': Math.floor(40 + Math.random() * 50),
+          'wh-fra': Math.floor(60 + Math.random() * 40),
+          'wh-cdg': Math.floor(45 + Math.random() * 45)
+        },
+        isDropshipped: true,
+        originalPrice: originalPrice,
+        sourcePlatform: 'CJ Dropshipping',
+        productLink: `https://cjdropshipping.com/product-detail.html?id=${sku}`,
+        images: proxiedImages.length > 0 ? proxiedImages : (proxiedImageUrl ? [proxiedImageUrl] : []),
+        videoUrl: ''
+      };
+
+      products.unshift(newProduct);
+
+      // Add a success notification
+      notifications.unshift({
+        id: `notif-${Date.now()}`,
+        title: 'Produto Publicado Direto da CJ ⚡',
+        message: `O produto "${name}" foi publicado diretamente do painel da CJ Dropshipping na sua loja Kivento com margem ativa.`,
+        type: 'success',
+        timestamp: new Date().toISOString(),
+        read: false
+      });
+
+      // Respond with a mock Shopify-style response so CJ knows it succeeded
+      res.status(201).json({
+        product: {
+          id: Number(newProduct.id.replace(/[^0-9]/g, '').substring(0, 9)) || 123456,
+          title: newProduct.name,
+          body_html: newProduct.description.pt,
+          variants: [
+            {
+              id: Number(newProduct.id.replace(/[^0-9]/g, '').substring(1, 10)) || 654321,
+              price: String(newProduct.price),
+              sku: sku,
+              inventory_quantity: 200
+            }
+          ]
+        }
+      });
+    } catch (err) {
+      console.error('Shopify product creation emulation error:', err);
+      res.status(500).json({ error: 'Internal server error in Shopify emulation.' });
+    }
+  });
+
+  // 1f_webhooks: CJ may try to register or query webhooks
+  app.post('/admin/api/:version/webhooks.json', (req, res) => {
+    res.status(201).json({
+      webhook: {
+        id: 123456789,
+        address: req.body.webhook?.address || '',
+        topic: req.body.webhook?.topic || 'orders/create'
+      }
+    });
+  });
+
+  app.get('/admin/api/:version/webhooks.json', (req, res) => {
+    res.json({ webhooks: [] });
   });
 
   // Edit / Update Product Details
