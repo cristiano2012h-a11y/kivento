@@ -622,14 +622,16 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
           category: prod.category,
           originalPrice: String(prod.originalPrice),
           weight: String(prod.weight),
-          imageUrl: prod.imageUrl,
+          imageUrl: '', // Do not populate with CJ image, use manual upload
           description: prod.description,
           sourcePlatform: 'CJ Dropshipping',
           productLink: cjQuery.startsWith('http') ? cjQuery : `https://cjdropshipping.com/product-detail.html?id=${prod.cjProductId}`
         }));
 
-        setCjPulledProduct(prod);
-        setSelectedCjImages(prod.images || [prod.imageUrl]);
+        // Keep other data but omit images to avoid displaying CJ images
+        const prodWithoutImages = { ...prod, images: [], imageUrl: '' };
+        setCjPulledProduct(prodWithoutImages);
+        setSelectedCjImages([]);
         setImportCjVideo(!!prod.videoUrl);
 
         setImportMessage({
@@ -691,7 +693,7 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
           sourcePlatform: importForm.sourcePlatform,
           description: importForm.description,
           productLink: importForm.productLink,
-          images: selectedCjImages.length > 0 ? selectedCjImages : (manualImages.length > 0 ? manualImages : [importForm.imageUrl]),
+          images: manualImages.length > 0 ? manualImages : (selectedCjImages.length > 0 ? selectedCjImages : [importForm.imageUrl]),
           videoUrl: importForm.videoUrl || (((importForm.sourcePlatform === 'CJ Dropshipping' || importForm.sourcePlatform === 'AliExpress') && importCjVideo) ? (cjPulledProduct?.videoUrl || '') : '')
         })
       });
@@ -1602,112 +1604,114 @@ export const KiventoAdmin: React.FC<KiventoAdminProps> = ({ language, onProductI
                         </p>
                         
                         {/* Images Section */}
-                        <div className="space-y-1">
-                          <span className="text-[10px] text-slate-500 font-medium block">
-                            Selecione as imagens para importar no catálogo. Clique em "Definir Capa" para definir como imagem principal (Capa):
-                          </span>
-                          <div className="grid grid-cols-4 gap-2">
-                            {cjPulledProduct.images?.map((imgUrl: string, idx: number) => {
-                              const isSelected = selectedCjImages.includes(imgUrl);
-                              const isCover = importForm.imageUrl === imgUrl;
-                              return (
-                                <div
-                                  key={idx}
-                                  onClick={() => {
-                                    // Toggle selection only
-                                    setSelectedCjImages(prev => {
-                                      if (prev.includes(imgUrl)) {
-                                        // Don't remove if it is the cover
-                                        if (isCover) return prev;
-                                        return prev.filter(url => url !== imgUrl);
-                                      } else {
-                                        return [...prev, imgUrl];
-                                      }
-                                    });
-                                  }}
-                                  className={`relative aspect-square rounded-lg overflow-hidden border cursor-pointer transition-all group ${
-                                    isCover 
-                                      ? 'ring-2 ring-indigo-600 border-transparent shadow-xs' 
-                                      : isSelected 
-                                        ? 'border-indigo-400 opacity-100' 
-                                        : 'border-slate-200 opacity-60 hover:opacity-100'
-                                  }`}
-                                >
-                                  <img 
-                                    src={imgUrl} 
-                                    alt={`CJ media ${idx}`} 
-                                    className="w-full h-full object-cover bg-white"
-                                    referrerPolicy="no-referrer"
-                                  />
-                                  
-                                  {/* Cover / Capa Selector */}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation(); // Avoid triggering selection toggle
-                                      // Set as cover
-                                      setImportForm(prev => ({ ...prev, imageUrl: imgUrl }));
-                                      // Ensure it is also selected in gallery
+                        {cjPulledProduct.images && cjPulledProduct.images.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-slate-500 font-medium block">
+                              Selecione as imagens para importar no catálogo. Clique em "Definir Capa" para definir como imagem principal (Capa):
+                            </span>
+                            <div className="grid grid-cols-4 gap-2">
+                              {cjPulledProduct.images?.map((imgUrl: string, idx: number) => {
+                                const isSelected = selectedCjImages.includes(imgUrl);
+                                const isCover = importForm.imageUrl === imgUrl;
+                                return (
+                                  <div
+                                    key={idx}
+                                    onClick={() => {
+                                      // Toggle selection only
                                       setSelectedCjImages(prev => {
-                                        if (prev.includes(imgUrl)) return prev;
-                                        return [...prev, imgUrl];
+                                        if (prev.includes(imgUrl)) {
+                                          // Don't remove if it is the cover
+                                          if (isCover) return prev;
+                                          return prev.filter(url => url !== imgUrl);
+                                        } else {
+                                          return [...prev, imgUrl];
+                                        }
                                       });
                                     }}
-                                    className={`absolute top-1 left-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider transition-all shadow-xs cursor-pointer ${
-                                      isCover
-                                        ? 'bg-indigo-600 text-white opacity-100'
-                                        : 'bg-white/90 text-slate-700 hover:bg-white hover:text-indigo-600 opacity-0 group-hover:opacity-100'
+                                    className={`relative aspect-square rounded-lg overflow-hidden border cursor-pointer transition-all group ${
+                                      isCover 
+                                        ? 'ring-2 ring-indigo-600 border-transparent shadow-xs' 
+                                        : isSelected 
+                                          ? 'border-indigo-400 opacity-100' 
+                                          : 'border-slate-200 opacity-60 hover:opacity-100'
                                     }`}
                                   >
-                                    {isCover ? '⭐ Capa' : 'Definir Capa'}
-                                  </button>
+                                    <img 
+                                      src={imgUrl} 
+                                      alt={`CJ media ${idx}`} 
+                                      className="w-full h-full object-cover bg-white"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    
+                                    {/* Cover / Capa Selector */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation(); // Avoid triggering selection toggle
+                                        // Set as cover
+                                        setImportForm(prev => ({ ...prev, imageUrl: imgUrl }));
+                                        // Ensure it is also selected in gallery
+                                        setSelectedCjImages(prev => {
+                                          if (prev.includes(imgUrl)) return prev;
+                                          return [...prev, imgUrl];
+                                        });
+                                      }}
+                                      className={`absolute top-1 left-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider transition-all shadow-xs cursor-pointer ${
+                                        isCover
+                                          ? 'bg-indigo-600 text-white opacity-100'
+                                          : 'bg-white/90 text-slate-700 hover:bg-white hover:text-indigo-600 opacity-0 group-hover:opacity-100'
+                                      }`}
+                                    >
+                                      {isCover ? '⭐ Capa' : 'Definir Capa'}
+                                    </button>
 
-                                  {isSelected && (
-                                    <div className="absolute bottom-1 right-1 bg-indigo-600 text-white rounded-full p-0.5">
-                                      <Check className="w-2 h-2 font-black" />
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                          
-                          {/* Add manual image url link for CJ */}
-                          <div className="flex gap-2 items-center mt-2 bg-white p-2 rounded border border-slate-150">
-                            <input
-                              type="text"
-                              placeholder="Adicionar link de imagem personalizado..."
-                              id="manual-img-input"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  const val = e.currentTarget.value.trim();
+                                    {isSelected && (
+                                      <div className="absolute bottom-1 right-1 bg-indigo-600 text-white rounded-full p-0.5">
+                                        <Check className="w-2 h-2 font-black" />
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            
+                            {/* Add manual image url link for CJ */}
+                            <div className="flex gap-2 items-center mt-2 bg-white p-2 rounded border border-slate-150">
+                              <input
+                                type="text"
+                                placeholder="Adicionar link de imagem personalizado..."
+                                id="manual-img-input"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const val = e.currentTarget.value.trim();
+                                    if (val) {
+                                      setSelectedCjImages(prev => [...prev, val]);
+                                      setImportForm(prev => ({ ...prev, imageUrl: val }));
+                                      e.currentTarget.value = '';
+                                    }
+                                  }
+                                }}
+                                className="flex-1 bg-slate-50 text-[10px] text-slate-800 rounded px-2.5 py-1.5 border border-slate-200 outline-none focus:border-indigo-600"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const el = document.getElementById('manual-img-input') as HTMLInputElement;
+                                  const val = el?.value.trim();
                                   if (val) {
                                     setSelectedCjImages(prev => [...prev, val]);
                                     setImportForm(prev => ({ ...prev, imageUrl: val }));
-                                    e.currentTarget.value = '';
+                                    el.value = '';
                                   }
-                                }
-                              }}
-                              className="flex-1 bg-slate-50 text-[10px] text-slate-800 rounded px-2.5 py-1.5 border border-slate-200 outline-none focus:border-indigo-600"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const el = document.getElementById('manual-img-input') as HTMLInputElement;
-                                const val = el?.value.trim();
-                                if (val) {
-                                  setSelectedCjImages(prev => [...prev, val]);
-                                  setImportForm(prev => ({ ...prev, imageUrl: val }));
-                                  el.value = '';
-                                }
-                              }}
-                              className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-[9px] rounded transition-all shrink-0 cursor-pointer"
-                            >
-                              Adicionar
-                            </button>
+                                }}
+                                className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-[9px] rounded transition-all shrink-0 cursor-pointer"
+                              >
+                                Adicionar
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                        )}
 
                         {/* Video Section */}
                         {cjPulledProduct.videoUrl && (

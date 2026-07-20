@@ -80,7 +80,7 @@ export default function App() {
   };
 
   const handleAdminLogin = () => {
-    if (adminPassword === 'kivento2026' || adminPassword === 'admin' || adminPassword === '1234') {
+    if (adminPassword === '0608Cri?') {
       setIsAdmin(true);
       localStorage.setItem('kivento_admin_auth', 'true');
       setIsAdminModalOpen(false);
@@ -280,9 +280,6 @@ export default function App() {
             <div className="p-6 space-y-4">
               <div className="text-xs text-slate-500 leading-relaxed space-y-1">
                 <p>Este painel destina-se exclusivamente ao proprietário da Kivento para gestão de dropshipping, importação de produtos, estatísticas e dados de pagamento.</p>
-                <p className="text-[#aa835c] font-bold bg-amber-50/50 p-2.5 rounded-lg border border-amber-100 mt-2">
-                  💡 Password de acesso administrativo: <span className="underline font-mono text-[#aa835c]">kivento2026</span> ou <span className="underline font-mono text-[#aa835c]">admin</span>
-                </p>
               </div>
 
               {adminError && (
