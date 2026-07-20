@@ -6,6 +6,22 @@ import { createServer as createViteServer } from 'vite';
 import { INITIAL_PRODUCTS, WAREHOUSES, CARRIERS, COUNTRIES } from './src/data/mockData';
 import { Product, Order, OrderStatus, TrackingData, TrackingCheckpoint, RegionReport, PromoBanner } from './src/types';
 import { GoogleGenAI, Type } from '@google/genai';
+import {
+  isFirebaseConfigured,
+  getProducts,
+  saveProduct,
+  deleteProduct,
+  getOrders,
+  saveOrder,
+  getNotifications,
+  saveNotification,
+  markNotificationsAsRead,
+  getPromoBanners,
+  savePromoBanner,
+  deletePromoBanner,
+  getSettings,
+  saveSettings
+} from './src/db/firebase.js';
 
 // Let's create an in-memory database
 const products: Product[] = JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
@@ -294,17 +310,19 @@ async function startServer() {
   });
   
   // 1. Get Products
-  app.get('/api/products', (req, res) => {
-    res.json(products);
+  app.get('/api/products', async (req, res) => {
+    const list = await getProducts(products);
+    res.json(list);
   });
 
   // 1b. Get Kivento Settings
-  app.get('/api/settings', (req, res) => {
-    res.json(shopSettings);
+  app.get('/api/settings', async (req, res) => {
+    const settings = await getSettings(shopSettings, 'shop');
+    res.json(settings);
   });
 
   // 1c. Update Kivento Settings
-  app.post('/api/settings', (req, res) => {
+  app.post('/api/settings', async (req, res) => {
     const { bankName, accountHolder, iban, swift, mbwayPhone, profitMarginMarkup } = req.body;
     shopSettings = {
       bankName: bankName || shopSettings.bankName,
@@ -314,16 +332,18 @@ async function startServer() {
       mbwayPhone: mbwayPhone || shopSettings.mbwayPhone,
       profitMarginMarkup: profitMarginMarkup !== undefined && !isNaN(Number(profitMarginMarkup)) ? Number(profitMarginMarkup) : shopSettings.profitMarginMarkup
     };
+    await saveSettings('shop', shopSettings);
     res.json({ success: true, settings: shopSettings });
   });
 
   // 1c_cj. Get CJ Dropshipping Settings
-  app.get('/api/settings/cj', (req, res) => {
-    res.json(cjSettings);
+  app.get('/api/settings/cj', async (req, res) => {
+    const settings = await getSettings(cjSettings, 'cj');
+    res.json(settings);
   });
 
   // 1c_cj_update. Update CJ Dropshipping Settings
-  app.post('/api/settings/cj', (req, res) => {
+  app.post('/api/settings/cj', async (req, res) => {
     const { isConnected, apiKey, storeId, cjEmail, autoSyncOrders, autoSyncInventory } = req.body;
     cjSettings = {
       isConnected: isConnected !== undefined ? !!isConnected : cjSettings.isConnected,
@@ -333,29 +353,33 @@ async function startServer() {
       autoSyncOrders: autoSyncOrders !== undefined ? !!autoSyncOrders : cjSettings.autoSyncOrders,
       autoSyncInventory: autoSyncInventory !== undefined ? !!autoSyncInventory : cjSettings.autoSyncInventory
     };
+    await saveSettings('cj', cjSettings);
 
     // If newly connected, push a notification
     if (isConnected) {
-      notifications.unshift({
+      const newNotif = {
         id: `notif-${Date.now()}`,
         title: 'Integração CJ Conectada',
         message: `A sua loja Kivento.pt foi conectada com sucesso ao CJ Dropshipping (${cjEmail || 'API Account'}). Estoques e encomendas sincronizados!`,
-        type: 'success',
+        type: 'success' as const,
         timestamp: new Date().toISOString(),
         read: false
-      });
+      };
+      notifications.unshift(newNotif);
+      await saveNotification(newNotif);
     }
 
     res.json({ success: true, settings: cjSettings });
   });
 
   // 1c_domain. Get Domain Settings
-  app.get('/api/settings/domain', (req, res) => {
-    res.json(domainSettings);
+  app.get('/api/settings/domain', async (req, res) => {
+    const settings = await getSettings(domainSettings, 'domain');
+    res.json(settings);
   });
 
   // 1c_domain_update. Update/Verify Domain Settings
-  app.post('/api/settings/domain', (req, res) => {
+  app.post('/api/settings/domain', async (req, res) => {
     const { customDomain, status } = req.body;
     
     if (customDomain !== undefined) {
@@ -364,26 +388,31 @@ async function startServer() {
     if (status !== undefined) {
       domainSettings.status = status;
     }
+    await saveSettings('domain', domainSettings);
 
     // Add notification when domain changes status
     if (status === 'active' && customDomain) {
-      notifications.unshift({
+      const newNotif = {
         id: `notif-${Date.now()}`,
         title: 'Domínio Ativo com Sucesso! 🎉',
         message: `O seu domínio personalizado ${customDomain} foi propagado com sucesso. O tráfego agora está 100% seguro com Certificado SSL grátis ativo!`,
-        type: 'success',
+        type: 'success' as const,
         timestamp: new Date().toISOString(),
         read: false
-      });
+      };
+      notifications.unshift(newNotif);
+      await saveNotification(newNotif);
     } else if (status === 'ssl_verifying' && customDomain) {
-      notifications.unshift({
+      const newNotif = {
         id: `notif-${Date.now()}`,
         title: 'A Validar Certificado SSL',
         message: `Os registos DNS para ${customDomain} foram detectados. Iniciámos a validação do certificado SSL automático grátis Let's Encrypt.`,
-        type: 'info',
+        type: 'info' as const,
         timestamp: new Date().toISOString(),
         read: false
-      });
+      };
+      notifications.unshift(newNotif);
+      await saveNotification(newNotif);
     }
 
     res.json({ success: true, settings: domainSettings });
@@ -606,12 +635,13 @@ Retorne OBRIGATORIAMENTE um objeto JSON com esses campos.`;
   });
 
   // 1c_2. Get Banners
-  app.get('/api/banners', (req, res) => {
-    res.json(promoBanners);
+  app.get('/api/banners', async (req, res) => {
+    const list = await getPromoBanners(promoBanners);
+    res.json(list);
   });
 
   // 1c_3. Create / Update Banner
-  app.post('/api/banners', (req, res) => {
+  app.post('/api/banners', async (req, res) => {
     const { id, badgeText, badgeBg, title, subtitle, gradientFrom, gradientVia, gradientTo, isActive } = req.body;
     if (!badgeText || !title || !subtitle || !gradientFrom || !gradientTo) {
       return res.status(400).json({ error: 'Faltam campos obrigatórios para o banner (badgeText, title, subtitle, gradientFrom, gradientTo).' });
@@ -619,9 +649,10 @@ Retorne OBRIGATORIAMENTE um objeto JSON com esses campos.`;
 
     if (id) {
       // Update existing
-      const idx = promoBanners.findIndex(b => b.id === id);
+      const currentPromoBanners = await getPromoBanners(promoBanners);
+      const idx = currentPromoBanners.findIndex(b => b.id === id);
       if (idx !== -1) {
-        promoBanners[idx] = {
+        const updatedBanner: PromoBanner = {
           id,
           badgeText,
           badgeBg: badgeBg || 'bg-yellow-400 text-slate-900',
@@ -632,7 +663,10 @@ Retorne OBRIGATORIAMENTE um objeto JSON com esses campos.`;
           gradientTo,
           isActive: isActive !== undefined ? !!isActive : true
         };
-        return res.json({ success: true, banner: promoBanners[idx], banners: promoBanners });
+        promoBanners[idx] = updatedBanner;
+        await savePromoBanner(updatedBanner);
+        const latest = await getPromoBanners(promoBanners);
+        return res.json({ success: true, banner: updatedBanner, banners: latest });
       } else {
         return res.status(404).json({ error: 'Banner não encontrado para atualização.' });
       }
@@ -650,20 +684,20 @@ Retorne OBRIGATORIAMENTE um objeto JSON com esses campos.`;
         isActive: isActive !== undefined ? !!isActive : true
       };
       promoBanners.push(newBanner);
-      return res.json({ success: true, banner: newBanner, banners: promoBanners });
+      await savePromoBanner(newBanner);
+      const latest = await getPromoBanners(promoBanners);
+      return res.json({ success: true, banner: newBanner, banners: latest });
     }
   });
 
   // 1c_4. Delete Banner
-  app.delete('/api/banners/:id', (req, res) => {
+  app.delete('/api/banners/:id', async (req, res) => {
     const { id } = req.params;
     const initialLen = promoBanners.length;
     promoBanners = promoBanners.filter(b => b.id !== id);
-    if (promoBanners.length < initialLen) {
-      res.json({ success: true, banners: promoBanners });
-    } else {
-      res.status(404).json({ error: 'Banner não encontrado.' });
-    }
+    await deletePromoBanner(id);
+    const latest = await getPromoBanners(promoBanners);
+    res.json({ success: true, banners: latest });
   });
 
   // CJ Dropshipping / AliExpress API Lookup simulation with dynamic Unsplash search & Gemini grounding
@@ -918,7 +952,7 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
   });
 
   // 1d. Import Dropshipping Product
-  app.post('/api/products/import', (req, res) => {
+  app.post('/api/products/import', async (req, res) => {
     const { name, category, originalPrice, sellingPrice, imageUrl, weight, sourcePlatform, description, productLink, images, videoUrl } = req.body;
     if (!name || !category || originalPrice === undefined) {
       return res.status(400).json({ error: 'Faltam campos obrigatórios para importar o produto.' });
@@ -966,16 +1000,19 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
     };
 
     products.unshift(newProduct);
+    await saveProduct(newProduct);
 
     // Create a success notification
-    notifications.unshift({
+    const newNotif = {
       id: `notif-${Date.now()}`,
       title: 'Produto Dropshipping Importado',
       message: `O produto "${name}" foi importado com sucesso do ${sourcePlatform || 'AliExpress'} com margem de lucro de ${shopSettings.profitMarginMarkup}% (Preço de venda: €${salePrice}).`,
-      type: 'success',
+      type: 'success' as const,
       timestamp: new Date().toISOString(),
       read: false
-    });
+    };
+    notifications.unshift(newNotif);
+    await saveNotification(newNotif);
 
     res.json({ success: true, product: newProduct });
   });
@@ -1294,11 +1331,12 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
   });
 
   // Edit / Update Product Details
-  app.put('/api/products/:id', (req, res) => {
+  app.put('/api/products/:id', async (req, res) => {
     const { id } = req.params;
     const { name, category, price, originalPrice, imageUrl, images, videoUrl, weight, description } = req.body;
     
-    const prod = products.find(p => p.id === id);
+    const currentProducts = await getProducts(products);
+    const prod = currentProducts.find(p => p.id === id);
     if (!prod) {
       return res.status(404).json({ error: 'Produto não encontrado.' });
     }
@@ -1324,27 +1362,40 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
       }
     }
 
+    // Sync in memory array
+    const localIdx = products.findIndex(p => p.id === id);
+    if (localIdx !== -1) {
+      products[localIdx] = prod;
+    }
+    await saveProduct(prod);
+
     res.json({ success: true, product: prod });
   });
 
   // 1e. Delete Product
-  app.delete('/api/products/:id', (req, res) => {
+  app.delete('/api/products/:id', async (req, res) => {
     const { id } = req.params;
     const index = products.findIndex(p => p.id === id);
+    let removedProduct: Product | undefined;
     if (index !== -1) {
-      const removedProduct = products[index];
+      removedProduct = products[index];
       products.splice(index, 1);
+    }
+    
+    await deleteProduct(id);
 
+    if (removedProduct) {
       // Create a notification
-      notifications.unshift({
+      const newNotif = {
         id: `notif-${Date.now()}`,
         title: 'Produto Excluído',
         message: `O produto "${removedProduct.name}" foi removido com sucesso do catálogo.`,
-        type: 'info',
+        type: 'info' as const,
         timestamp: new Date().toISOString(),
         read: false
-      });
-
+      };
+      notifications.unshift(newNotif);
+      await saveNotification(newNotif);
       res.json({ success: true });
     } else {
       res.status(404).json({ error: 'Produto não encontrado.' });
@@ -1352,9 +1403,10 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
   });
 
   // 2. Restock Product (Warehouse management feature)
-  app.post('/api/products/restock', (req, res) => {
+  app.post('/api/products/restock', async (req, res) => {
     const { productId, warehouseId, quantity } = req.body;
-    const prod = products.find(p => p.id === productId);
+    const currentProducts = await getProducts(products);
+    const prod = currentProducts.find(p => p.id === productId);
     if (!prod) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -1364,15 +1416,24 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
     }
     prod.stock[warehouseId] += Number(quantity);
 
+    // Sync in memory
+    const localIdx = products.findIndex(p => p.id === productId);
+    if (localIdx !== -1) {
+      products[localIdx] = prod;
+    }
+    await saveProduct(prod);
+
     // Create a notification for low stock refilled
-    notifications.unshift({
+    const newNotif = {
       id: `notif-${Date.now()}`,
       title: 'Restoque Realizado',
       message: `O produto "${prod.name}" foi abastecido em +${quantity} unidades no armazém ${warehouseId.toUpperCase()}.`,
-      type: 'info',
+      type: 'info' as const,
       timestamp: new Date().toISOString(),
       read: false
-    });
+    };
+    notifications.unshift(newNotif);
+    await saveNotification(newNotif);
 
     res.json({ success: true, product: prod });
   });
@@ -1475,7 +1536,7 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
   });
 
   // 6. Checkout Order
-  app.post('/api/checkout', (req, res) => {
+  app.post('/api/checkout', async (req, res) => {
     const {
       customerName,
       email,
@@ -1495,10 +1556,12 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
       exchangeRate
     } = req.body;
 
+    const currentProducts = await getProducts(products);
+
     // Validate stock and decrement
     let hasStock = true;
     const orderItemsList = items.map((item: { productId: string, quantity: number }) => {
-      const prod = products.find(p => p.id === item.productId);
+      const prod = currentProducts.find(p => p.id === item.productId);
       if (!prod || (prod.stock[warehouseId] || 0) < item.quantity) {
         hasStock = false;
         return null;
@@ -1516,11 +1579,18 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
       return res.status(400).json({ error: 'Erro de Estoque: Um ou mais produtos esgotaram no armazém de origem durante o checkout.' });
     }
 
-    // Decrement stock
-    items.forEach((item: { productId: string, quantity: number }) => {
-      const prod = products.find(p => p.id === item.productId)!;
+    // Decrement stock and save to Firebase / Local
+    for (const item of items) {
+      const prod = currentProducts.find(p => p.id === item.productId)!;
       prod.stock[warehouseId] -= item.quantity;
-    });
+      
+      // Update local array
+      const localIdx = products.findIndex(p => p.id === item.productId);
+      if (localIdx !== -1) {
+        products[localIdx] = prod;
+      }
+      await saveProduct(prod);
+    }
 
     const subtotal = orderItemsList.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0);
     const total = subtotal + shippingCost;
@@ -1562,31 +1632,36 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
     };
 
     orders.unshift(newOrder);
+    await saveOrder(newOrder);
 
     // Initial Notification
-    notifications.unshift({
+    const newNotif = {
       id: `notif-${Date.now()}`,
       title: paymentMethod === 'mbway' ? 'Pagamento Pendente' : 'Pagamento Confirmado',
       message: paymentMethod === 'mbway' 
         ? `Aguardando confirmação MB Way no número ${paymentPhone} para o pedido ${newOrder.id}.` 
         : `O seu pedido ${newOrder.id} de ${currency} ${newOrder.total} foi pago com sucesso!`,
-      type: paymentMethod === 'mbway' ? 'warning' : 'success',
+      type: paymentMethod === 'mbway' ? 'warning' as const : 'success' as const,
       timestamp: new Date().toISOString(),
       read: false
-    });
+    };
+    notifications.unshift(newNotif);
+    await saveNotification(newNotif);
 
     res.json({ success: true, order: newOrder });
   });
 
   // 7. Get Orders
-  app.get('/api/orders', (req, res) => {
-    res.json(orders);
+  app.get('/api/orders', async (req, res) => {
+    const list = await getOrders(orders);
+    res.json(list);
   });
 
   // 8. Live Tracking API (combines routing and real-time simulator coordinates)
-  app.get('/api/tracking/:code', (req, res) => {
+  app.get('/api/tracking/:code', async (req, res) => {
     const { code } = req.params;
-    const order = orders.find(o => o.trackingCode === code);
+    const currentOrders = await getOrders(orders);
+    const order = currentOrders.find(o => o.trackingCode === code);
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
@@ -1629,34 +1704,47 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
       const oldStatus = order.status;
       order.status = computedStatus;
 
+      // Sync local in-memory too
+      const localOrd = orders.find(o => o.trackingCode === code);
+      if (localOrd) {
+        localOrd.status = computedStatus;
+      }
+      await saveOrder(order);
+
       // Trigger standard notifications when status transitions
       if (computedStatus === 'paid' && oldStatus === 'pending_payment') {
-        notifications.unshift({
+        const newNotif = {
           id: `notif-${Date.now()}`,
           title: 'Pagamento Aprovado',
           message: `O pagamento do seu pedido ${order.id} foi recebido!`,
-          type: 'success',
+          type: 'success' as const,
           timestamp: new Date().toISOString(),
           read: false
-        });
+        };
+        notifications.unshift(newNotif);
+        await saveNotification(newNotif);
       } else if (computedStatus === 'shipped') {
-        notifications.unshift({
+        const newNotif = {
           id: `notif-${Date.now()}`,
           title: 'Pedido Enviado',
           message: `O pedido ${order.id} saiu do armazém ${wh.city} via ${CARRIERS.find(c => c.id === order.carrierId)!.name}!`,
-          type: 'info',
+          type: 'info' as const,
           timestamp: new Date().toISOString(),
           read: false
-        });
+        };
+        notifications.unshift(newNotif);
+        await saveNotification(newNotif);
       } else if (computedStatus === 'delivered') {
-        notifications.unshift({
+        const newNotif = {
           id: `notif-${Date.now()}`,
           title: 'Pedido Entregue',
           message: `Encomenda ${order.id} entregue com sucesso! Obrigado por comprar connosco.`,
-          type: 'success',
+          type: 'success' as const,
           timestamp: new Date().toISOString(),
           read: false
-        });
+        };
+        notifications.unshift(newNotif);
+        await saveNotification(newNotif);
       }
     }
 
@@ -1670,6 +1758,11 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
 
     // Save back to order
     order.currentCoords = currentCoords;
+    const localOrd = orders.find(o => o.trackingCode === code);
+    if (localOrd) {
+      localOrd.currentCoords = currentCoords;
+    }
+    await saveOrder(order);
 
     const carrier = CARRIERS.find(c => c.id === order.carrierId)!;
 
@@ -1751,35 +1844,50 @@ Responda estritamente em formato JSON válido conforme a estrutura especificada.
   });
 
   // 10. Notifications endpoint
-  app.get('/api/notifications', (req, res) => {
-    res.json(notifications);
+  app.get('/api/notifications', async (req, res) => {
+    const list = await getNotifications(notifications);
+    res.json(list);
   });
 
-  app.post('/api/notifications/read-all', (req, res) => {
+  app.post('/api/notifications/read-all', async (req, res) => {
     notifications.forEach(n => n.read = true);
+    await markNotificationsAsRead();
     res.json({ success: true });
   });
 
   // Background Auto-Approver for MB Way orders
-  setInterval(() => {
-    orders.forEach(o => {
-      if (o.status === 'pending_payment') {
-        const secondsSinceCreation = (Date.now() - new Date(o.createdAt).getTime()) / 1000;
-        // Approve payment after 5 seconds automatically to keep demo interactive
-        if (secondsSinceCreation >= 5) {
-          o.status = 'paid';
-          notifications.unshift({
-            id: `notif-${Date.now()}`,
-            title: 'Pagamento Aprovado',
-            message: `O pagamento do seu pedido ${o.id} via MB Way foi processado com sucesso!`,
-            type: 'success',
-            timestamp: new Date().toISOString(),
-            read: false
-          });
+  setInterval(async () => {
+    try {
+      const currentOrders = await getOrders(orders);
+      for (const o of currentOrders) {
+        if (o.status === 'pending_payment') {
+          const secondsSinceCreation = (Date.now() - new Date(o.createdAt).getTime()) / 1000;
+          // Approve payment after 5 seconds automatically to keep demo interactive
+          if (secondsSinceCreation >= 5) {
+            o.status = 'paid';
+            
+            // Sync local state
+            const localOrd = orders.find(ord => ord.id === o.id);
+            if (localOrd) localOrd.status = 'paid';
+            await saveOrder(o);
+
+            const newNotif = {
+              id: `notif-${Date.now()}`,
+              title: 'Pagamento Aprovado',
+              message: `O pagamento do seu pedido ${o.id} via MB Way foi processado com sucesso!`,
+              type: 'success' as const,
+              timestamp: new Date().toISOString(),
+              read: false
+            };
+            notifications.unshift(newNotif);
+            await saveNotification(newNotif);
+          }
         }
       }
-    });
-  }, 3000);
+    } catch (err) {
+      console.error('Error in background auto-approver:', err);
+    }
+  }, 5000);
 
   // Vite Middleware Setup
   if (process.env.NODE_ENV !== 'production') {
